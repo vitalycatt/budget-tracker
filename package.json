@@ -1,0 +1,16 @@
+{
+  "name": "smart-wallet-tracker",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Smart Wallet Tracker — личный учёт финансов (Telegram bot + Mini App)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build --workspace @swt/shared",
+    "dev:server": "npm run start:dev --workspace smart-wallet-tracker-server",
+    "dev:client": "npm run dev --workspace vite_react_shadcn_ts",
+    "build": "npm run build:shared && npm run build --workspace smart-wallet-tracker-server && npm run build --workspace vite_react_shadcn_ts"
+  }
+}

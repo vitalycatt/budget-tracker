@@ -1,0 +1,21 @@
+{
+  "name": "@swt/shared",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Общие типы, enum'ы валют и Zod-схемы для сервера и клиента",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
