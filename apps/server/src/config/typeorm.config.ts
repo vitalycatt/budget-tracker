@@ -4,10 +4,11 @@ import { Account } from '../accounts/entities/account.entity';
 import { Category } from '../categories/entities/category.entity';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import { User } from '../users/entities/user.entity';
+import { ExchangeRate } from '../exchange-rates/entities/exchange-rate.entity';
 
 config();
 
-const entities = [User, Category, Account, Transaction];
+const entities = [User, Category, Account, Transaction, ExchangeRate];
 
 export default new DataSource({
   type: 'postgres',

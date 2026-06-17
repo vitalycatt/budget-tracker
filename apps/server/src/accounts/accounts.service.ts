@@ -4,13 +4,49 @@ import { Repository } from 'typeorm';
 import { Account } from './entities/account.entity';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { UpdateAccountDto } from './dto/update-account.dto';
+import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
+import { Currency } from '@swt/shared';
+
+export interface NetWorth {
+  baseCurrency: string;
+  total: number;
+  accounts: { id: string; name: string; currency: string; balance: number; balanceInBase: number }[];
+}
 
 @Injectable()
 export class AccountsService {
   constructor(
     @InjectRepository(Account)
     private accountsRepository: Repository<Account>,
+    private readonly exchangeRatesService: ExchangeRatesService,
   ) {}
+
+  /** Суммарное «состояние»: балансы всех счетов, приведённые к базовой валюте по текущим курсам. */
+  async getNetWorth(userId: string, baseCurrency: string): Promise<NetWorth> {
+    const accounts = await this.findAll(userId);
+    const items = await Promise.all(
+      accounts.map(async (a) => {
+        const balanceInBase = Number(
+          (
+            await this.exchangeRatesService.convert(
+              Number(a.balance),
+              a.currency as Currency,
+              baseCurrency as Currency,
+            )
+          ).toFixed(2),
+        );
+        return {
+          id: a.id,
+          name: a.name,
+          currency: a.currency,
+          balance: Number(a.balance),
+          balanceInBase,
+        };
+      }),
+    );
+    const total = Number(items.reduce((sum, i) => sum + i.balanceInBase, 0).toFixed(2));
+    return { baseCurrency, total, accounts: items };
+  }
 
   async create(userId: string, createAccountDto: CreateAccountDto): Promise<Account> {
     const account = this.accountsRepository.create({

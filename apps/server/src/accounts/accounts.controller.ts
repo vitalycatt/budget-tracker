@@ -30,6 +30,12 @@ export class AccountsController {
     return this.accountsService.findAll(user.id);
   }
 
+  // Должен идти ДО ':id', иначе ParseUUIDPipe отвергнет 'net-worth'
+  @Get('net-worth')
+  netWorth(@CurrentUser() user: User) {
+    return this.accountsService.getNetWorth(user.id, user.baseCurrency);
+  }
+
   @Get(':id')
   findOne(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
     return this.accountsService.findOne(user.id, id);

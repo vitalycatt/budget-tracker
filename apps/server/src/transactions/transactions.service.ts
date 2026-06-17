@@ -5,6 +5,8 @@ import { Transaction, TransactionType } from './entities/transaction.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { Account } from '../accounts/entities/account.entity';
 import { Category } from '../categories/entities/category.entity';
+import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
+import { Currency } from '@swt/shared';
 
 @Injectable()
 export class TransactionsService {
@@ -17,9 +19,14 @@ export class TransactionsService {
     private categoriesRepository: Repository<Category>,
     @InjectDataSource()
     private dataSource: DataSource,
+    private readonly exchangeRatesService: ExchangeRatesService,
   ) {}
 
-  async create(userId: string, createTransactionDto: CreateTransactionDto): Promise<Transaction> {
+  async create(
+    userId: string,
+    baseCurrency: string,
+    createTransactionDto: CreateTransactionDto,
+  ): Promise<Transaction> {
     // Счёт и категория должны принадлежать текущему пользователю
     const account = await this.accountsRepository.findOne({
       where: { id: createTransactionDto.accountId, userId },
@@ -35,11 +42,22 @@ export class TransactionsService {
       throw new NotFoundException(`Категория с ID ${createTransactionDto.categoryId} не найдена`);
     }
 
+    // Снимок курса валюты счёта → базовая валюта пользователя на момент операции
+    const currency = account.currency;
+    const exchangeRate = await this.exchangeRatesService.getRate(
+      currency as Currency,
+      baseCurrency as Currency,
+    );
+    const amountInBase = Number((createTransactionDto.amount * exchangeRate).toFixed(2));
+
     // Используем транзакцию для атомарности операций
     return await this.dataSource.transaction(async (manager) => {
       const transaction = manager.create(Transaction, {
         ...(createTransactionDto as Partial<Transaction>),
         userId,
+        currency,
+        exchangeRate,
+        amountInBase,
       });
       const savedTransaction = await manager.save(Transaction, transaction);
 

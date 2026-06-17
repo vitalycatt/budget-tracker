@@ -22,7 +22,7 @@ export class TransactionsController {
   @Post()
   @ZodValidation(createTransactionSchema)
   create(@CurrentUser() user: User, @Body() createTransactionDto: CreateTransactionDto) {
-    return this.transactionsService.create(user.id, createTransactionDto);
+    return this.transactionsService.create(user.id, user.baseCurrency, createTransactionDto);
   }
 
   @Get()

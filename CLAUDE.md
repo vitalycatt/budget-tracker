@@ -52,12 +52,12 @@
 
 ### `Transaction` — доходы и расходы
 - `id` (UUID, PK)
-- `userId` (FK → User) — **ТРЕБУЕТСЯ ДОБАВИТЬ**
+- `userId` (FK → User)
 - `type` (enum: `income` | `expense`)
 - `amount` (decimal 10,2) — в валюте счёта
-- `currency` (string ISO-4217) — валюта операции (= валюте счёта) — **ТРЕБУЕТСЯ ДОБАВИТЬ**
-- `exchangeRate` (decimal) — **снимок** курса `currency → user.baseCurrency` на момент операции — **ТРЕБУЕТСЯ ДОБАВИТЬ**
-- `amountInBase` (decimal 10,2) — сумма в базовой валюте (= `amount × exchangeRate`), для быстрой агрегации — **ТРЕБУЕТСЯ ДОБАВИТЬ**
+- `currency` (string ISO-4217) — валюта операции (= валюте счёта)
+- `exchangeRate` (decimal) — **снимок** курса `currency → user.baseCurrency` на момент операции
+- `amountInBase` (decimal 10,2) — сумма в базовой валюте (= `amount × exchangeRate`), для быстрой агрегации
 - `categoryId` (FK → Category)
 - `accountId` (FK → Account)
 - `description` (string ≤ 500)
@@ -66,10 +66,10 @@
 
 ### `Account` — банковские счета / состояние
 - `id` (UUID, PK)
-- `userId` (FK → User) — **ТРЕБУЕТСЯ ДОБАВИТЬ**
+- `userId` (FK → User)
 - `name` (string ≤ 100)
 - `type` (enum: `bank` | `card` | `cash`) — тип счёта (не валюта!)
-- `currency` (string ISO-4217, default `RUB`) — валюта счёта — **ТРЕБУЕТСЯ ДОБАВИТЬ**
+- `currency` (string ISO-4217, default `RUB`) — валюта счёта
 - `balance` (decimal 10,2, default 0) — в валюте счёта, пересчитывается автоматически при транзакциях
 - `color` (HEX `#RRGGBB`)
 - `createdAt`, `updatedAt`
@@ -79,7 +79,7 @@
 
 ### `Category` — справочник категорий
 - `id` (UUID, PK)
-- `userId` (FK → User) — **ТРЕБУЕТСЯ ДОБАВИТЬ** (категории должны быть приватными)
+- `userId` (FK → User) (категории должны быть приватными)
 - `name` (string ≤ 100)
 - `icon` (emoji)
 - `color` (HEX `#RRGGBB`)
@@ -88,7 +88,7 @@
 
 > Категории создаются **на лету** при вводе транзакции (отдельной страницы управления нет, см. раздел 3).
 
-### `ExchangeRate` — кэш курсов валют *(ТРЕБУЕТСЯ ДОБАВИТЬ)*
+### `ExchangeRate` — кэш курсов валют
 - `id` (UUID, PK)
 - `base` (string ISO-4217) — базовая валюта котировки
 - `quote` (string ISO-4217) — котируемая валюта
@@ -164,9 +164,10 @@
 
 ### API (текущее)
 - `users`: `GET /me` · `POST /me/onboarding` *(Этап 1)*
-- `transactions`: `POST /` · `GET /?type=` · `GET /:id` · `DELETE /:id`
-- `accounts`: `POST /` · `GET /` · `GET /:id` · `PATCH /:id` · `DELETE /:id`
+- `transactions`: `POST /` · `GET /?type=` · `GET /:id` · `DELETE /:id` *(снимок курса при создании, Этап 2)*
+- `accounts`: `POST /` · `GET /` · `GET /net-worth` · `GET /:id` · `PATCH /:id` · `DELETE /:id` *(валюта счёта + состояние, Этап 2)*
 - `categories`: `POST /` · `GET /` · `GET /:id` · `PATCH /:id` · `DELETE /:id`
+- `exchange-rates`: `GET /` (курсы USD→X) · `POST /refresh` *(Этап 2)*
 
 > Все эндпоинты защищены `TelegramAuthGuard` (глобальный) и изолированы по `userId`.
 > Авторизация: заголовок `x-telegram-init-data` (HMAC по bot token) в prod; в dev — обход через фиксированного тестового юзера.
@@ -176,20 +177,22 @@
 ## 5. Что есть vs чего не хватает
 
 ### ✅ Реализовано
+- Монорепо (npm workspaces) + `packages/shared` (валюты, типы, Zod-схемы, `formatMoney`) *(Этап 0)*
+- **Мультипользовательность**: `User`, `userId` на всех таблицах, изоляция по `userId` *(Этап 1)*
+- **Telegram-авторизация**: `TelegramAuthGuard` (initData HMAC в prod, dev-обход), онбординг, дефолтные категории *(Этап 1)*
+- **Мультивалютность (сервер)**: `currency`/`exchangeRate`/`amountInBase`, `ExchangeRate`, фетч курсов + кэш, net-worth *(Этап 2)*
 - Три сущности (Transaction / Account / Category) с полным CRUD и Zod-валидацией
 - PostgreSQL + TypeORM, атомарный пересчёт баланса при транзакциях
 - Клиент: 4 страницы, React Query, графики и статистика, пошаговый ввод транзакции
 - Mobile-first вёрстка (safe-area, нижняя навигация)
 
 ### ❌ Не реализовано (план работ, по приоритету)
-1. **Мультипользовательность** — сущность `User`, `userId` на всех таблицах, изоляция данных. *(фундамент)*
-2. **Авторизация через Telegram** — валидация `initData` (HMAC по bot token) в Mini App; identify по `telegramId`.
-3. **Мультивалютность** (раздел 2.1) — поля `currency`/`exchangeRate`/`amountInBase`, `baseCurrency` у User, таблица `ExchangeRate`, суточный фетч с `open.er-api.com`, `formatMoney`.
-4. **Telegram-бот (текст)** — приём текстовых сообщений, **парсинг через LLM (Claude API)** → создание транзакции, подтверждение пользователю. Голос — позже.
-5. **Telegram Mini App SDK** на клиенте (`@twa-dev/sdk` / `telegram-web-app`): тема, `initData`, нативные кнопки.
-6. **Приведение к 3-страничной структуре** (раздел 3) — убрать страницу категорий, создание на лету.
-7. Редактирование транзакций (сейчас только удаление); фильтры по дате/сумме.
-8. *(позже)* Голосовой ввод в боте (audio → текст).
+1. **Telegram Mini App SDK** на клиенте (`@twa-dev/sdk` / `telegram-web-app`): тема, `initData`, нативные кнопки. *(Этап 3)*
+2. **Клиент: мультивалютность** — выбор валюты счёта, отображение через `formatMoney`, экран онбординга. *(Этап 3/5)*
+3. **Telegram-бот (текст)** — приём текстовых сообщений, **парсинг через LLM (Claude API)** → создание транзакции, подтверждение пользователю. Голос — позже. *(Этап 4)*
+4. **Приведение к 3-страничной структуре** (раздел 3) — убрать страницу категорий, создание на лету. *(Этап 5)*
+5. Редактирование транзакций (сейчас только удаление); фильтры по дате/сумме. *(Этап 6)*
+6. *(позже)* Голосовой ввод в боте (audio → текст).
 
 ---
 
@@ -238,11 +241,15 @@
 - ✅ Онбординг: `POST /users/me/onboarding` (базовая валюта); дефолтные категории создаются при первом входе.
 - Проверено e2e локально: создание юзера, дефолтные категории, инвариант баланса, изоляция, prod-отказ без initData.
 
-**Этап 2 — Мультивалютность**
-- Поля `currency` (Account/Transaction), `exchangeRate`, `amountInBase`; сущность `ExchangeRate`.
-- Сервис курсов: суточный фетч с `open.er-api.com` + кэш в БД (cron/фоновая задача).
-- При создании транзакции — снимок курса; «состояние» = сумма счетов в `baseCurrency` по текущим курсам.
-- Клиент: выбор валюты счёта, отображение через `formatMoney`.
+**Этап 2 — Мультивалютность** ✅ *(сервер готов)*
+- ✅ Поля `currency` (Account/Transaction), `exchangeRate`, `amountInBase`; сущность `ExchangeRate`.
+- ✅ Сервис курсов (`ExchangeRatesService`): фетч с `open.er-api.com` (пивот USD), кэш в БД, суточное обновление через `setInterval` + ленивое обновление на старте, fallback-курсы при недоступности API. *(не `@nestjs/schedule` — он конфликтует с Nest 10/TypeORM DI; см. ниже)*
+- ✅ При создании транзакции — снимок курса (`currency`/`exchangeRate`/`amountInBase`); «состояние» (`GET /accounts/net-worth`) = сумма счетов в `baseCurrency` по текущим курсам.
+- Проверено e2e: курсы фетчатся на старте, кросс-курсы (USD/EUR/RUB), снимок при транзакции, net-worth.
+- ⏳ Клиент (выбор валюты счёта, `formatMoney`) — отложено к Этапу 3/5 (клиент пока не подключён к API/авторизации).
+
+> ⚠️ **Грабли:** `@nestjs/schedule` ломает DI (`TypeOrmCoreModule ModuleRef`) на Nest 10 — не ставить. Курсы обновляем своим `setInterval`.
+> ⚠️ Монорепо: при добавлении server-зависимостей делать `npm install` из **корня**; при странных DI-ошибках TypeORM — снести все `node_modules` + `package-lock.json` и переустановить (нужна консистентная подъёмка `@nestjs/*` в корневой `node_modules`).
 
 **Этап 3 — Telegram Mini App (клиент)**
 - Подключить SDK (`@twa-dev/sdk`), прокинуть `initData` в API, применить тему Telegram.

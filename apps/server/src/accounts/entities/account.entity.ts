@@ -36,6 +36,10 @@ export class Account {
   })
   type: AccountType;
 
+  /** Валюта счёта (ISO-4217). Баланс хранится в этой валюте. */
+  @Column({ default: 'RUB' })
+  currency: string;
+
   @Column('decimal', { precision: 10, scale: 2, default: 0 })
   balance: number;
 

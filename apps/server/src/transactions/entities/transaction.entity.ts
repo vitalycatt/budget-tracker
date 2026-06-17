@@ -37,6 +37,18 @@ export class Transaction {
   @Column('decimal', { precision: 10, scale: 2 })
   amount: number;
 
+  /** Валюта операции (= валюте счёта) на момент создания. */
+  @Column({ default: 'RUB' })
+  currency: string;
+
+  /** Снимок курса currency → user.baseCurrency на момент операции. */
+  @Column('decimal', { precision: 18, scale: 8, default: 1 })
+  exchangeRate: number;
+
+  /** Сумма в базовой валюте пользователя (amount × exchangeRate). */
+  @Column('decimal', { precision: 14, scale: 2, default: 0 })
+  amountInBase: number;
+
   @Column('uuid')
   categoryId: string;
 
