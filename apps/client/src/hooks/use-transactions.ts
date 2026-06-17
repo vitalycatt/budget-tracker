@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transactionsApi } from '@/lib/api';
-import type { Transaction, TransactionType } from '@/stores/financeStore';
+import type { CreateTransactionInput, TransactionType } from '@/stores/financeStore';
 import { toast } from 'sonner';
 
 const TRANSACTIONS_QUERY_KEY = ['transactions'] as const;
@@ -19,7 +19,7 @@ export function useCreateTransaction() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: Omit<Transaction, 'id'>) => {
+    mutationFn: async (data: CreateTransactionInput) => {
       const response = await transactionsApi.create(data);
       return response.data;
     },

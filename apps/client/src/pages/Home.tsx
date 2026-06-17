@@ -8,6 +8,8 @@ import AddTransactionDialog from "@/components/AddTransactionDialog";
 import { useTransactions } from "@/hooks/use-transactions";
 import { useCategories } from "@/hooks/use-categories";
 import { useAccounts } from "@/hooks/use-accounts";
+import { useCurrentUser } from "@/hooks/use-user";
+import { formatMoney } from "@swt/shared";
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<TransactionType>("expense");
@@ -15,9 +17,12 @@ export default function Home() {
   const { data: transactions = [], isLoading } = useTransactions(activeTab);
   const { data: categories = [] } = useCategories();
   const { data: accounts = [] } = useAccounts();
+  const { data: user } = useCurrentUser();
+  const baseCurrency = user?.baseCurrency ?? "RUB";
 
+  // Итог считаем в базовой валюте (amountInBase), т.к. транзакции могут быть в разных валютах
   const totalAmount = transactions.reduce(
-    (sum, t) => sum + Number(t.amount),
+    (sum, t) => sum + Number(t.amountInBase ?? t.amount),
     0
   );
 
@@ -62,7 +67,7 @@ export default function Home() {
               Всего доходов
             </div>
             <div className="text-5xl font-black">
-              {totalAmount.toLocaleString("ru-RU")} ₽
+              {formatMoney(totalAmount, baseCurrency)}
             </div>
           </div>
 
@@ -93,7 +98,7 @@ export default function Home() {
                       </div>
                     </div>
                     <div className="text-xl font-black text-accent">
-                      +{Number(transaction.amount).toLocaleString("ru-RU")} ₽
+                      +{formatMoney(Number(transaction.amount), transaction.currency)}
                     </div>
                   </div>
                 </Card>
@@ -108,7 +113,7 @@ export default function Home() {
               Всего расходов
             </div>
             <div className="text-5xl font-black">
-              {totalAmount.toLocaleString("ru-RU")} ₽
+              {formatMoney(totalAmount, baseCurrency)}
             </div>
           </div>
 
@@ -139,7 +144,7 @@ export default function Home() {
                       </div>
                     </div>
                     <div className="text-xl font-black">
-                      -{Number(transaction.amount).toLocaleString("ru-RU")} ₽
+                      -{formatMoney(Number(transaction.amount), transaction.currency)}
                     </div>
                   </div>
                 </Card>

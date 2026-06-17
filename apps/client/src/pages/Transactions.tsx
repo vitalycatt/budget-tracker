@@ -8,6 +8,8 @@ import { ru } from 'date-fns/locale';
 import { useTransactions } from '@/hooks/use-transactions';
 import { useCategories } from '@/hooks/use-categories';
 import { useAccounts } from '@/hooks/use-accounts';
+import { useCurrentUser } from '@/hooks/use-user';
+import { formatMoney } from '@swt/shared';
 
 export default function Transactions() {
   const [activeTab, setActiveTab] = useState<TransactionType>('expense');
@@ -15,6 +17,8 @@ export default function Transactions() {
   const { data: transactions = [], isLoading } = useTransactions(activeTab);
   const { data: categories = [] } = useCategories();
   const { data: accounts = [] } = useAccounts();
+  const { data: user } = useCurrentUser();
+  const baseCurrency = user?.baseCurrency ?? 'RUB';
 
   const getCategoryName = (id: string) => {
     return categories.find((c) => c.id === id)?.name || 'Без категории';
@@ -24,13 +28,14 @@ export default function Transactions() {
     return accounts.find((a) => a.id === id)?.name || 'Без счета';
   };
 
+  // Агрегаты считаем в базовой валюте (amountInBase) — транзакции бывают в разных валютах
   const categoryStats = transactions.reduce((acc, t) => {
     const name = getCategoryName(t.categoryId);
-    acc[name] = (acc[name] || 0) + Number(t.amount);
+    acc[name] = (acc[name] || 0) + Number(t.amountInBase ?? t.amount);
     return acc;
   }, {} as Record<string, number>);
 
-  const totalAmount = transactions.reduce((sum, t) => sum + Number(t.amount), 0);
+  const totalAmount = transactions.reduce((sum, t) => sum + Number(t.amountInBase ?? t.amount), 0);
 
   const chartData = useMemo(() => {
     const now = new Date();
@@ -72,7 +77,7 @@ export default function Transactions() {
           const tDate = new Date(t.date);
           return isWithinInterval(tDate, { start: rangeStart, end: rangeEnd });
         })
-        .reduce((sum, t) => sum + Number(t.amount), 0);
+        .reduce((sum, t) => sum + Number(t.amountInBase ?? t.amount), 0);
 
       return { label, amount };
     });
@@ -129,7 +134,7 @@ export default function Transactions() {
                     borderRadius: '8px',
                     fontWeight: 'bold'
                   }}
-                  formatter={(value: number) => `${value.toLocaleString('ru-RU')} ₽`}
+                  formatter={(value: number) => formatMoney(value, baseCurrency)}
                 />
                 <Line 
                   type="monotone" 
@@ -146,7 +151,7 @@ export default function Transactions() {
             <div className="text-center mb-6">
               <div className="text-sm text-muted-foreground font-semibold mb-2">Всего доходов</div>
               <div className="text-5xl font-black text-accent">
-                {totalAmount.toLocaleString('ru-RU')} ₽
+                {formatMoney(totalAmount, baseCurrency)}
               </div>
             </div>
 
@@ -155,7 +160,7 @@ export default function Transactions() {
               {Object.entries(categoryStats).map(([category, amount]) => (
                 <div key={category} className="flex justify-between items-center">
                   <span className="font-semibold">{category}</span>
-                  <span className="font-bold">{amount.toLocaleString('ru-RU')} ₽</span>
+                  <span className="font-bold">{formatMoney(amount, baseCurrency)}</span>
                 </div>
               ))}
             </div>
@@ -185,7 +190,7 @@ export default function Transactions() {
                       </div>
                     </div>
                     <div className="text-xl font-black text-accent">
-                      +{Number(transaction.amount).toLocaleString('ru-RU')} ₽
+                      +{formatMoney(Number(transaction.amount), transaction.currency)}
                     </div>
                   </div>
                 </Card>
@@ -231,7 +236,7 @@ export default function Transactions() {
                     borderRadius: '8px',
                     fontWeight: 'bold'
                   }}
-                  formatter={(value: number) => `${value.toLocaleString('ru-RU')} ₽`}
+                  formatter={(value: number) => formatMoney(value, baseCurrency)}
                 />
                 <Line 
                   type="monotone" 
@@ -248,7 +253,7 @@ export default function Transactions() {
             <div className="text-center mb-6">
               <div className="text-sm text-muted-foreground font-semibold mb-2">Всего расходов</div>
               <div className="text-5xl font-black">
-                {totalAmount.toLocaleString('ru-RU')} ₽
+                {formatMoney(totalAmount, baseCurrency)}
               </div>
             </div>
 
@@ -257,7 +262,7 @@ export default function Transactions() {
               {Object.entries(categoryStats).map(([category, amount]) => (
                 <div key={category} className="flex justify-between items-center">
                   <span className="font-semibold">{category}</span>
-                  <span className="font-bold">{amount.toLocaleString('ru-RU')} ₽</span>
+                  <span className="font-bold">{formatMoney(amount, baseCurrency)}</span>
                 </div>
               ))}
             </div>
@@ -287,7 +292,7 @@ export default function Transactions() {
                       </div>
                     </div>
                     <div className="text-xl font-black">
-                      -{Number(transaction.amount).toLocaleString('ru-RU')} ₽
+                      -{formatMoney(Number(transaction.amount), transaction.currency)}
                     </div>
                   </div>
                 </Card>

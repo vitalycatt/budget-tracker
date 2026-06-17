@@ -13,6 +13,8 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Берём общий пакет из исходников (TS/ESM) — избегаем CJS-интеропа в rollup
+      "@swt/shared": path.resolve(__dirname, "../../packages/shared/src/index.ts"),
     },
   },
 }));

@@ -5,6 +5,7 @@ import type { TransactionType, Account, Category } from "@/stores/financeStore";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCategories } from "@/hooks/use-categories";
 import { useCreateTransaction } from "@/hooks/use-transactions";
+import { formatMoney } from "@swt/shared";
 import {
   Dialog,
   DialogTitle,
@@ -122,7 +123,7 @@ export default function AddTransactionDialog({
             <div className="space-y-6">
               <div className="text-center py-8">
                 <div className="text-5xl font-black mb-2">
-                  {amount || "0"} ₽
+                  {amount || "0"}
                 </div>
               </div>
 
@@ -199,7 +200,7 @@ export default function AddTransactionDialog({
                       <div>
                         <div className="font-bold">{account.name}</div>
                         <div className="text-sm text-muted-foreground font-semibold">
-                          {account.balance.toLocaleString("ru-RU")} ₽
+                          {formatMoney(Number(account.balance), account.currency)}
                         </div>
                       </div>
                     </div>
