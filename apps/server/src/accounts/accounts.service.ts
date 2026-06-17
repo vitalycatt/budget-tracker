@@ -12,34 +12,37 @@ export class AccountsService {
     private accountsRepository: Repository<Account>,
   ) {}
 
-  async create(createAccountDto: CreateAccountDto): Promise<Account> {
-    const account = this.accountsRepository.create(createAccountDto as Partial<Account>);
+  async create(userId: string, createAccountDto: CreateAccountDto): Promise<Account> {
+    const account = this.accountsRepository.create({
+      ...(createAccountDto as Partial<Account>),
+      userId,
+    });
     return await this.accountsRepository.save(account);
   }
 
-  async findAll(): Promise<Account[]> {
+  async findAll(userId: string): Promise<Account[]> {
     return await this.accountsRepository.find({
+      where: { userId },
       order: { createdAt: 'DESC' },
     });
   }
 
-  async findOne(id: string): Promise<Account> {
-    const account = await this.accountsRepository.findOne({ where: { id } });
+  async findOne(userId: string, id: string): Promise<Account> {
+    const account = await this.accountsRepository.findOne({ where: { id, userId } });
     if (!account) {
       throw new NotFoundException(`Счет с ID ${id} не найден`);
     }
     return account;
   }
 
-  async update(id: string, updateAccountDto: UpdateAccountDto): Promise<Account> {
-    const account = await this.findOne(id);
+  async update(userId: string, id: string, updateAccountDto: UpdateAccountDto): Promise<Account> {
+    const account = await this.findOne(userId, id);
     Object.assign(account, updateAccountDto);
     return await this.accountsRepository.save(account);
   }
 
-  async remove(id: string): Promise<void> {
-    const account = await this.findOne(id);
+  async remove(userId: string, id: string): Promise<void> {
+    const account = await this.findOne(userId, id);
     await this.accountsRepository.remove(account);
   }
 }
-

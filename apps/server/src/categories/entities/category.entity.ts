@@ -4,7 +4,10 @@ import {
   UpdateDateColumn,
   CreateDateColumn,
   PrimaryGeneratedColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
+import { User } from '../../users/entities/user.entity';
 
 export enum CategoryType {
   INCOME = 'income',
@@ -15,6 +18,13 @@ export enum CategoryType {
 export class Category {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column('uuid')
+  userId: string;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId' })
+  user: User;
 
   @Column()
   name: string;

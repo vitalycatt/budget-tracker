@@ -42,11 +42,12 @@
 Пользователь мыслит **тремя сущностями**: Доходы, Расходы, Состояние/Счета.
 В реализации доходы и расходы — это одна таблица `Transaction` с полем `type`.
 
-### `User` *(ТРЕБУЕТСЯ ДОБАВИТЬ — сейчас отсутствует)*
+### `User` ✅ *(реализовано, Этап 1)*
 - `id` (UUID, PK)
 - `telegramId` (bigint, unique) — связь «1 TG-юзер = 1 юзер приложения»
 - `username`, `firstName`, `lastName`, `languageCode` (опционально, из Telegram)
 - `baseCurrency` (string ISO-4217, default `RUB`) — валюта для подсчёта общего «состояния» и сводной статистики
+- `isOnboarded` (boolean, default `false`) — прошёл ли пользователь онбординг (выбор базовой валюты)
 - `createdAt`, `updatedAt`
 
 ### `Transaction` — доходы и расходы
@@ -162,9 +163,13 @@
 - Env: `VITE_API_URL` (default `http://localhost:3000`)
 
 ### API (текущее)
+- `users`: `GET /me` · `POST /me/onboarding` *(Этап 1)*
 - `transactions`: `POST /` · `GET /?type=` · `GET /:id` · `DELETE /:id`
 - `accounts`: `POST /` · `GET /` · `GET /:id` · `PATCH /:id` · `DELETE /:id`
 - `categories`: `POST /` · `GET /` · `GET /:id` · `PATCH /:id` · `DELETE /:id`
+
+> Все эндпоинты защищены `TelegramAuthGuard` (глобальный) и изолированы по `userId`.
+> Авторизация: заголовок `x-telegram-init-data` (HMAC по bot token) в prod; в dev — обход через фиксированного тестового юзера.
 
 ---
 
@@ -226,11 +231,12 @@
 - Подключить `shared` в `apps/server` и `apps/client`.
 - Пересоздать схему БД с нуля (данные тестовые).
 
-**Этап 1 — Фундамент: пользователи и изоляция (приоритет)**
-- Сущность `User` (+ `telegramId`, `baseCurrency`), `userId` на Account/Category/Transaction.
-- Telegram-аутентификация: валидация `initData` (HMAC) в prod + dev-обход (фиксированный тестовый юзер).
-- Guard/middleware: каждый запрос фильтруется по `userId`; нельзя вернуть чужие данные.
-- Онбординг: при первом входе спросить базовую валюту + создать дефолтные категории.
+**Этап 1 — Фундамент: пользователи и изоляция (приоритет)** ✅ *(готово)*
+- ✅ Сущность `User` (+ `telegramId`, `baseCurrency`, `isOnboarded`), `userId` на Account/Category/Transaction.
+- ✅ Telegram-аутентификация (`TelegramAuthGuard`, глобальный): валидация `initData` (HMAC) в prod + dev-обход (фиксированный тестовый юзер `999000001`).
+- ✅ Изоляция: каждый запрос фильтруется по `userId` (декоратор `@CurrentUser`); чужие данные → 404.
+- ✅ Онбординг: `POST /users/me/onboarding` (базовая валюта); дефолтные категории создаются при первом входе.
+- Проверено e2e локально: создание юзера, дефолтные категории, инвариант баланса, изоляция, prod-отказ без initData.
 
 **Этап 2 — Мультивалютность**
 - Поля `currency` (Account/Transaction), `exchangeRate`, `amountInBase`; сущность `ExchangeRate`.

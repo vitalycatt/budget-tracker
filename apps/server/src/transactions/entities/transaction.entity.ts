@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Category } from '../../categories/entities/category.entity';
 import { Account } from '../../accounts/entities/account.entity';
+import { User } from '../../users/entities/user.entity';
 
 export enum TransactionType {
   INCOME = 'income',
@@ -19,6 +20,13 @@ export enum TransactionType {
 export class Transaction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  @Column('uuid')
+  userId: string;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId' })
+  user: User;
 
   @Column({
     type: 'enum',

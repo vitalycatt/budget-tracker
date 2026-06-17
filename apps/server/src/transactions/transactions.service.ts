@@ -19,17 +19,17 @@ export class TransactionsService {
     private dataSource: DataSource,
   ) {}
 
-  async create(createTransactionDto: CreateTransactionDto): Promise<Transaction> {
-    // Проверяем существование счета и категории
+  async create(userId: string, createTransactionDto: CreateTransactionDto): Promise<Transaction> {
+    // Счёт и категория должны принадлежать текущему пользователю
     const account = await this.accountsRepository.findOne({
-      where: { id: createTransactionDto.accountId },
+      where: { id: createTransactionDto.accountId, userId },
     });
     if (!account) {
       throw new NotFoundException(`Счет с ID ${createTransactionDto.accountId} не найден`);
     }
 
     const category = await this.categoriesRepository.findOne({
-      where: { id: createTransactionDto.categoryId },
+      where: { id: createTransactionDto.categoryId, userId },
     });
     if (!category) {
       throw new NotFoundException(`Категория с ID ${createTransactionDto.categoryId} не найдена`);
@@ -37,7 +37,10 @@ export class TransactionsService {
 
     // Используем транзакцию для атомарности операций
     return await this.dataSource.transaction(async (manager) => {
-      const transaction = manager.create(Transaction, createTransactionDto as Partial<Transaction>);
+      const transaction = manager.create(Transaction, {
+        ...(createTransactionDto as Partial<Transaction>),
+        userId,
+      });
       const savedTransaction = await manager.save(Transaction, transaction);
 
       // Обновляем баланс счета
@@ -56,24 +59,25 @@ export class TransactionsService {
     });
   }
 
-  async findAll(): Promise<Transaction[]> {
+  async findAll(userId: string): Promise<Transaction[]> {
     return await this.transactionsRepository.find({
+      where: { userId },
       relations: ['category', 'account'],
       order: { date: 'DESC' },
     });
   }
 
-  async findByType(type: TransactionType): Promise<Transaction[]> {
+  async findByType(userId: string, type: TransactionType): Promise<Transaction[]> {
     return await this.transactionsRepository.find({
-      where: { type },
+      where: { userId, type },
       relations: ['category', 'account'],
       order: { date: 'DESC' },
     });
   }
 
-  async findOne(id: string): Promise<Transaction> {
+  async findOne(userId: string, id: string): Promise<Transaction> {
     const transaction = await this.transactionsRepository.findOne({
-      where: { id },
+      where: { id, userId },
       relations: ['category', 'account'],
     });
     if (!transaction) {
@@ -82,10 +86,10 @@ export class TransactionsService {
     return transaction;
   }
 
-  async remove(id: string): Promise<void> {
-    const transaction = await this.findOne(id);
+  async remove(userId: string, id: string): Promise<void> {
+    const transaction = await this.findOne(userId, id);
     const account = await this.accountsRepository.findOne({
-      where: { id: transaction.accountId },
+      where: { id: transaction.accountId, userId },
     });
 
     if (!account) {
@@ -106,4 +110,3 @@ export class TransactionsService {
     });
   }
 }
-

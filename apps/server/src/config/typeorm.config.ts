@@ -3,10 +3,11 @@ import { config } from 'dotenv';
 import { Account } from '../accounts/entities/account.entity';
 import { Category } from '../categories/entities/category.entity';
 import { Transaction } from '../transactions/entities/transaction.entity';
+import { User } from '../users/entities/user.entity';
 
 config();
 
-const entities = [Category, Account, Transaction];
+const entities = [User, Category, Account, Transaction];
 
 export default new DataSource({
   type: 'postgres',
