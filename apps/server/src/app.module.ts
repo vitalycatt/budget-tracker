@@ -7,6 +7,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { ExchangeRatesModule } from './exchange-rates/exchange-rates.module';
+import { TelegramModule } from './telegram/telegram.module';
 import { Category } from './categories/entities/category.entity';
 import { Account } from './accounts/entities/account.entity';
 import { Transaction } from './transactions/entities/transaction.entity';
@@ -35,6 +36,7 @@ import { ExchangeRate } from './exchange-rates/entities/exchange-rate.entity';
     CategoriesModule,
     AccountsModule,
     TransactionsModule,
+    TelegramModule,
   ],
 })
 export class AppModule {}
