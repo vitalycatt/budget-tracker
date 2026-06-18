@@ -1,11 +1,10 @@
-import { Home, TrendingUp, Grid, Wallet } from "lucide-react";
+import { TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { NavLink } from "./NavLink";
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { icon: Home, label: "Главная", path: "/" },
-  { icon: TrendingUp, label: "Операции", path: "/transactions" },
-  { icon: Grid, label: "Категории", path: "/categories" },
+  { icon: TrendingDown, label: "Расходы", path: "/" },
+  { icon: TrendingUp, label: "Доходы", path: "/income" },
   { icon: Wallet, label: "Счета", path: "/accounts" },
 ];
 
@@ -24,6 +23,7 @@ export const BottomNav = () => {
           <NavLink
             key={item.path}
             to={item.path}
+            end={item.path === "/"}
             className="flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-lg transition-colors"
             activeClassName="text-accent"
           >

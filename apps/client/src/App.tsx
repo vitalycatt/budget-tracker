@@ -5,9 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import Onboarding from "./components/Onboarding";
-import Home from "./pages/Home";
 import Transactions from "./pages/Transactions";
-import Categories from "./pages/Categories";
 import Accounts from "./pages/Accounts";
 import NotFound from "./pages/NotFound";
 import { useCurrentUser } from "./hooks/use-user";
@@ -52,9 +50,8 @@ const Gate = () => {
     <BrowserRouter>
       <Layout>
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/transactions" element={<Transactions />} />
-          <Route path="/categories" element={<Categories />} />
+          <Route path="/" element={<Transactions type="expense" />} />
+          <Route path="/income" element={<Transactions type="income" />} />
           <Route path="/accounts" element={<Accounts />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
