@@ -83,5 +83,7 @@ export const transactionsApi = {
   },
   getById: (id: string) => api.get<Transaction>(`/transactions/${id}`),
   create: (data: CreateTransactionInput) => api.post<Transaction>('/transactions', data),
+  update: (id: string, data: Partial<CreateTransactionInput>) =>
+    api.patch<Transaction>(`/transactions/${id}`, data),
   delete: (id: string) => api.delete(`/transactions/${id}`),
 };

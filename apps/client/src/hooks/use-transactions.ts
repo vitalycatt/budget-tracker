@@ -34,6 +34,25 @@ export function useCreateTransaction() {
   });
 }
 
+export function useUpdateTransaction() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<CreateTransactionInput> }) => {
+      const response = await transactionsApi.update(id, data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      toast.success('Транзакция обновлена');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Ошибка при обновлении транзакции');
+    },
+  });
+}
+
 export function useDeleteTransaction() {
   const queryClient = useQueryClient();
 

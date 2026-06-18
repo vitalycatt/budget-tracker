@@ -3,6 +3,7 @@ import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Transaction, TransactionType } from './entities/transaction.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { Account } from '../accounts/entities/account.entity';
 import { Category } from '../categories/entities/category.entity';
 import { ExchangeRatesService } from '../exchange-rates/exchange-rates.service';
@@ -74,6 +75,99 @@ export class TransactionsService {
       await manager.save(Account, account);
 
       return savedTransaction;
+    });
+  }
+
+  /**
+   * Обновление транзакции с сохранением инварианта баланса:
+   * откатываем эффект старой операции на старом счёте, применяем новый на новом счёте — атомарно.
+   * Снимок курса (`exchangeRate`/`amountInBase`) пересчитывается на момент редактирования.
+   */
+  async update(
+    userId: string,
+    baseCurrency: string,
+    id: string,
+    dto: UpdateTransactionDto,
+  ): Promise<Transaction> {
+    const existing = await this.transactionsRepository.findOne({ where: { id, userId } });
+    if (!existing) {
+      throw new NotFoundException(`Транзакция с ID ${id} не найдена`);
+    }
+
+    const newType = (dto.type ?? existing.type) as TransactionType;
+    const newAmount = dto.amount ?? Number(existing.amount);
+    const newAccountId = dto.accountId ?? existing.accountId;
+    const newCategoryId = dto.categoryId ?? existing.categoryId;
+    const newDescription = dto.description ?? existing.description;
+    const newDate = dto.date ?? existing.date;
+
+    // Категория должна принадлежать пользователю
+    const category = await this.categoriesRepository.findOne({
+      where: { id: newCategoryId, userId },
+    });
+    if (!category) {
+      throw new NotFoundException(`Категория с ID ${newCategoryId} не найдена`);
+    }
+
+    return await this.dataSource.transaction(async (manager) => {
+      const oldAccount = await manager.findOne(Account, {
+        where: { id: existing.accountId, userId },
+      });
+      if (!oldAccount) {
+        throw new NotFoundException(`Счет с ID ${existing.accountId} не найден`);
+      }
+
+      // Откатываем эффект старой операции
+      if (existing.type === TransactionType.INCOME) {
+        oldAccount.balance = Number(oldAccount.balance) - Number(existing.amount);
+      } else {
+        oldAccount.balance = Number(oldAccount.balance) + Number(existing.amount);
+      }
+
+      // Новый счёт (тот же объект, если id не менялся — чтобы корректно сложить эффекты)
+      let newAccount = oldAccount;
+      if (newAccountId !== oldAccount.id) {
+        const found = await manager.findOne(Account, { where: { id: newAccountId, userId } });
+        if (!found) {
+          throw new NotFoundException(`Счет с ID ${newAccountId} не найден`);
+        }
+        newAccount = found;
+      }
+
+      // Снимок курса валюты нового счёта → базовая валюта на момент редактирования
+      const currency = newAccount.currency;
+      const exchangeRate = await this.exchangeRatesService.getRate(
+        currency as Currency,
+        baseCurrency as Currency,
+      );
+      const amountInBase = Number((newAmount * exchangeRate).toFixed(2));
+
+      // Применяем эффект новой операции
+      if (newType === TransactionType.INCOME) {
+        newAccount.balance = Number(newAccount.balance) + newAmount;
+      } else {
+        newAccount.balance = Number(newAccount.balance) - newAmount;
+        if (newAccount.balance < 0) {
+          throw new BadRequestException('Недостаточно средств на счете');
+        }
+      }
+
+      await manager.save(Account, oldAccount);
+      if (newAccount !== oldAccount) {
+        await manager.save(Account, newAccount);
+      }
+
+      existing.type = newType;
+      existing.amount = newAmount;
+      existing.currency = currency;
+      existing.exchangeRate = exchangeRate;
+      existing.amountInBase = amountInBase;
+      existing.categoryId = newCategoryId;
+      existing.accountId = newAccountId;
+      existing.description = newDescription;
+      existing.date = newDate;
+
+      return await manager.save(Transaction, existing);
     });
   }
 

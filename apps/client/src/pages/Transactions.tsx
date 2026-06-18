@@ -1,10 +1,13 @@
 import { useState, useMemo } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { TransactionType } from '@/stores/financeStore';
+import type { TransactionType, Transaction } from '@/stores/financeStore';
 import { Card } from '@/components/ui/card';
 import AddTransactionDialog from '@/components/AddTransactionDialog';
+import EditTransactionDialog from '@/components/EditTransactionDialog';
 import {
   LineChart,
   Line,
@@ -43,6 +46,12 @@ interface TransactionsProps {
 export default function Transactions({ type }: TransactionsProps) {
   const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editTx, setEditTx] = useState<Transaction | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [amountMin, setAmountMin] = useState('');
+  const [amountMax, setAmountMax] = useState('');
   const { data: transactions = [], isLoading } = useTransactions(type);
   const { data: categories = [] } = useCategories();
   const { data: accounts = [] } = useAccounts();
@@ -113,6 +122,34 @@ export default function Transactions({ type }: TransactionsProps) {
       return { label, amount };
     });
   }, [period, transactions]);
+
+  // Фильтры применяются к списку «История» (по дате и сумме операции)
+  const filteredHistory = useMemo(() => {
+    const from = dateFrom ? new Date(dateFrom) : null;
+    const to = dateTo ? new Date(dateTo) : null;
+    if (to) to.setHours(23, 59, 59, 999);
+    const min = amountMin ? parseFloat(amountMin) : null;
+    const max = amountMax ? parseFloat(amountMax) : null;
+
+    return transactions.filter((t) => {
+      const d = new Date(t.date);
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      const amt = Number(t.amount);
+      if (min !== null && amt < min) return false;
+      if (max !== null && amt > max) return false;
+      return true;
+    });
+  }, [transactions, dateFrom, dateTo, amountMin, amountMax]);
+
+  const hasActiveFilters = !!(dateFrom || dateTo || amountMin || amountMax);
+
+  const resetFilters = () => {
+    setDateFrom('');
+    setDateTo('');
+    setAmountMin('');
+    setAmountMax('');
+  };
 
   return (
     <div className="min-h-screen p-6">
@@ -202,22 +239,82 @@ export default function Transactions({ type }: TransactionsProps) {
         </Card>
       )}
 
-      {/* История */}
+      {/* История + фильтры */}
       <div className="space-y-3">
-        <div className="text-lg font-black mb-3">История</div>
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-lg font-black">История</div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`font-bold ${hasActiveFilters ? 'text-accent' : ''}`}
+            onClick={() => setShowFilters((v) => !v)}
+          >
+            <SlidersHorizontal className="w-4 h-4 mr-1" />
+            Фильтры
+          </Button>
+        </div>
+
+        {showFilters && (
+          <Card className="p-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-muted-foreground">Дата с</Label>
+                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-muted-foreground">Дата по</Label>
+                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-muted-foreground">Сумма от</Label>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  value={amountMin}
+                  onChange={(e) => setAmountMin(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-muted-foreground">Сумма до</Label>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  value={amountMax}
+                  onChange={(e) => setAmountMax(e.target.value)}
+                  placeholder="∞"
+                />
+              </div>
+            </div>
+            {hasActiveFilters && (
+              <Button variant="outline" size="sm" className="w-full font-bold" onClick={resetFilters}>
+                Сбросить фильтры
+              </Button>
+            )}
+          </Card>
+        )}
+
         {isLoading ? (
           <Card className="p-6 text-center">
             <p className="text-muted-foreground font-semibold">Загрузка...</p>
           </Card>
-        ) : transactions.length === 0 ? (
+        ) : filteredHistory.length === 0 ? (
           <Card className="p-6 text-center">
             <p className="text-muted-foreground font-semibold">
-              {isIncome ? 'Нет доходов' : 'Нет расходов'}
+              {transactions.length === 0
+                ? isIncome
+                  ? 'Нет доходов'
+                  : 'Нет расходов'
+                : 'Ничего не найдено по фильтрам'}
             </p>
           </Card>
         ) : (
-          transactions.map((transaction) => (
-            <Card key={transaction.id} className="p-4">
+          filteredHistory.map((transaction) => (
+            <Card
+              key={transaction.id}
+              className="p-4 cursor-pointer hover:bg-accent/10 transition-colors"
+              onClick={() => setEditTx(transaction)}
+            >
               <div className="flex justify-between items-start">
                 <div>
                   <div className="font-bold text-lg mb-1">{transaction.description}</div>
@@ -249,6 +346,12 @@ export default function Transactions({ type }: TransactionsProps) {
       </Button>
 
       <AddTransactionDialog open={dialogOpen} onOpenChange={setDialogOpen} type={type} />
+
+      <EditTransactionDialog
+        open={!!editTx}
+        onOpenChange={(open) => !open && setEditTx(null)}
+        transaction={editTx}
+      />
     </div>
   );
 }

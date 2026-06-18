@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   Delete,
@@ -10,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { createTransactionSchema, CreateTransactionDto } from './dto/create-transaction.dto';
+import { updateTransactionSchema, UpdateTransactionDto } from './dto/update-transaction.dto';
 import { TransactionType } from './entities/transaction.entity';
 import { ZodValidation } from '../common/decorators/zod-validation.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -36,6 +38,16 @@ export class TransactionsController {
   @Get(':id')
   findOne(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
     return this.transactionsService.findOne(user.id, id);
+  }
+
+  @Patch(':id')
+  @ZodValidation(updateTransactionSchema)
+  update(
+    @CurrentUser() user: User,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateTransactionDto: UpdateTransactionDto,
+  ) {
+    return this.transactionsService.update(user.id, user.baseCurrency, id, updateTransactionDto);
   }
 
   @Delete(':id')
