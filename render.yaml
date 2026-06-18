@@ -1,0 +1,57 @@
+# Render Blueprint — бэкенд (NestJS) + PostgreSQL.
+# Применение: Render Dashboard → New → Blueprint → выбрать этот репозиторий.
+# Секреты (sync: false) задаются вручную в дашборде после первого деплоя.
+#
+# Сборка идёт из КОРНЯ монорепо: npm install поднимает workspaces (включая @swt/shared),
+# затем собираем shared → server. Старт — из собранного бандла.
+
+databases:
+  - name: budget-tracker-db
+    databaseName: budget_tracker
+    user: budget_tracker
+    plan: free
+
+services:
+  - type: web
+    name: budget-tracker-api
+    runtime: node
+    plan: free
+    branch: main
+    rootDir: .
+    buildCommand: npm install && npm run build:server
+    startCommand: npm run start:server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Подключение к БД — берётся из созданной выше базы
+      - key: DB_HOST
+        fromDatabase:
+          name: budget-tracker-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: budget-tracker-db
+          property: port
+      - key: DB_USERNAME
+        fromDatabase:
+          name: budget-tracker-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: budget-tracker-db
+          property: password
+      - key: DB_DATABASE
+        fromDatabase:
+          name: budget-tracker-db
+          property: database
+      # Модель парсинга бота (можно изменить)
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-4-5
+      # Секреты — задать вручную в дашборде (Environment):
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # URL клиента (Vercel) для CORS, напр. https://budget-tracker.vercel.app
+      - key: CORS_ORIGIN
+        sync: false

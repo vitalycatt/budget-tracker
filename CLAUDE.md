@@ -303,8 +303,11 @@
 ## 9. Структура репозитория (целевая)
 
 ```
-smart-wallet-tracker/
+budget-tracker/
 ├── CLAUDE.md            ← этот файл (основа проекта)
+├── DEPLOY.md            гайд по деплою + настройке Telegram Mini App
+├── render.yaml          Render Blueprint: бэкенд (web) + PostgreSQL
+├── vercel.json          сборка клиента из корня монорепо (SPA-rewrites)
 ├── packages/
 │   └── shared/          общие TS-типы, enum'ы валют, Zod-схемы (сервер + клиент)
 └── apps/
@@ -313,3 +316,10 @@ smart-wallet-tracker/
     └── client/          React + Vite + shadcn/ui
         └── src/{pages,components,hooks,stores,lib}
 ```
+
+## 10. Деплой (см. DEPLOY.md)
+
+- **Бэкенд + БД** → Render (`render.yaml`): build `npm install && npm run build:server`, start `npm run start:server`.
+- **Клиент** → Vercel (`vercel.json`): Root Directory = **корень репо**, build `npm run build:client`, output `apps/client/dist`, env `VITE_API_URL`.
+- **Прод-инвариант:** `NODE_ENV=production` отключает dev-обход → нужен валидный Telegram `initData`; у бэкенда и у бота-владельца Mini App — **один `TELEGRAM_BOT_TOKEN`**. `CORS_ORIGIN` = URL клиента.
+- **Mini App:** в @BotFather кнопка-меню бота → URL клиента (Vercel). Бот (long-polling) живёт внутри NestJS; на free-tier Render засыпает.
