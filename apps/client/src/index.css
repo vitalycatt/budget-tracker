@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Safe-area отступы Telegram Mini App.
+   Значения --tg-safe-* проставляет lib/telegram.ts из Bot API (вырез устройства +
+   нативная панель Telegram в полноэкранном режиме). Вне Telegram — фолбэк на env()
+   (на десктопе это 0). Применяем к корню, чтобы все экраны (онбординг, загрузка, основной UI)
+   уходили из-под верхней панели Telegram. */
+#root {
+  padding-top: var(--tg-safe-top, env(safe-area-inset-top, 0px));
+  padding-left: var(--tg-safe-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--tg-safe-right, env(safe-area-inset-right, 0px));
+}
+
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
 All colors MUST be HSL.
 */

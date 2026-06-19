@@ -6,15 +6,9 @@ interface LayoutProps {
 }
 
 export const Layout = ({ children }: LayoutProps) => {
+  // Верхние/боковые safe-area отступы Telegram теперь на #root (см. index.css).
   return (
-    <div
-      className="min-h-screen bg-background pb-24"
-      style={{
-        paddingTop: "env(safe-area-inset-top)",
-        paddingLeft: "env(safe-area-inset-left)",
-        paddingRight: "env(safe-area-inset-right)",
-      }}
-    >
+    <div className="min-h-screen bg-background pb-24">
       <div className="max-w-screen-sm mx-auto px-4">{children}</div>
       <BottomNav />
     </div>
