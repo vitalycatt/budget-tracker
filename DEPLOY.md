@@ -78,16 +78,18 @@
 
 ## Переменные окружения (сводка)
 
-**Бэкенд (Render):**
+**Бэкенд (Render)** — шаблон `apps/server/env.example`:
 ```
 NODE_ENV=production
-DB_HOST= / DB_PORT= / DB_USERNAME= / DB_PASSWORD= / DB_DATABASE=   # из БД Render
-TELEGRAM_BOT_TOKEN=   # секрет
-ANTHROPIC_API_KEY=    # секрет
+DATABASE_URL=               # подключение к БД; на Render даётся «Add from Database»
+# (либо вместо DATABASE_URL — раздельные DB_HOST/DB_PORT/DB_USERNAME/DB_PASSWORD/DB_DATABASE)
+TELEGRAM_BOT_TOKEN=         # секрет (от @BotFather)
+ANTHROPIC_API_KEY=         # секрет (sk-ant-api03-... из console.anthropic.com)
 ANTHROPIC_MODEL=claude-haiku-4-5   # опционально
 CORS_ORIGIN=https://<client>.vercel.app
 # PORT — задаёт Render автоматически
 ```
+> Код поддерживает оба способа: если задан `DATABASE_URL` — берётся он (приоритет), иначе раздельные `DB_*`.
 
 **Клиент (Vercel):**
 ```

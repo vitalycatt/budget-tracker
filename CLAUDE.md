@@ -153,7 +153,7 @@
 - PostgreSQL + TypeORM 0.3 (БД `smart_wallet_tracker`, `synchronize` в dev)
 - Валидация: **Zod** через кастомный `ZodValidationPipe` + декоратор `@ZodValidation` (ошибки на русском)
 - Модули: `transactions`, `accounts`, `categories` (CRUD-контроллеры + сервисы)
-- Env: `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`, `PORT`, `NODE_ENV`, `CORS_ORIGIN`
+- Env (реально используются): `DATABASE_URL` *(или раздельные `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_DATABASE`)*, `PORT`, `NODE_ENV`, `CORS_ORIGIN`, `TELEGRAM_BOT_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`. Шаблон — `apps/server/env.example`. *(`DATABASE_URL` имеет приоритет; на Render даётся «Add from Database».)*
 
 ### Frontend — `apps/client`
 - React 18 + Vite 5 + TypeScript
@@ -161,7 +161,7 @@
 - Данные: **@tanstack/react-query** (хуки `use-transactions`/`use-accounts`/`use-categories`), `axios`
 - Стейт: `zustand` (`financeStore`) — содержит мок-данные, для API не используется
 - Графики: `recharts`, даты: `date-fns`, формы: `react-hook-form`
-- Env: `VITE_API_URL` (default `http://localhost:3000`)
+- Env (реально используется): `VITE_API_URL` (default `http://localhost:3000`). Шаблон — `apps/client/.env.example`.
 
 ### API (текущее)
 - `users`: `GET /me` · `POST /me/onboarding` *(Этап 1)*

@@ -14,6 +14,18 @@ import { Transaction } from './transactions/entities/transaction.entity';
 import { User } from './users/entities/user.entity';
 import { ExchangeRate } from './exchange-rates/entities/exchange-rate.entity';
 
+// Подключение к БД: если задан DATABASE_URL (Render «Add from Database») — берём его,
+// иначе — раздельные DB_* (локальный запуск / Docker).
+const dbConnection = process.env.DATABASE_URL
+  ? { url: process.env.DATABASE_URL }
+  : {
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      username: process.env.DB_USERNAME || 'postgres',
+      password: process.env.DB_PASSWORD || 'postgres',
+      database: process.env.DB_DATABASE || 'smart_wallet_tracker',
+    };
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -21,11 +33,7 @@ import { ExchangeRate } from './exchange-rates/entities/exchange-rate.entity';
     }),
     TypeOrmModule.forRoot({
       type: 'postgres',
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432', 10),
-      username: process.env.DB_USERNAME || 'postgres',
-      password: process.env.DB_PASSWORD || 'postgres',
-      database: process.env.DB_DATABASE || 'smart_wallet_tracker',
+      ...dbConnection,
       entities: [User, Category, Account, Transaction, ExchangeRate],
       synchronize: true, // Автоматическая синхронизация схемы БД
       logging: process.env.NODE_ENV === 'development',

@@ -16,7 +16,7 @@ services:
     name: budget-tracker-api
     runtime: node
     plan: free
-    branch: main
+    branch: dev
     rootDir: .
     buildCommand: npm install && npm run build:server
     startCommand: npm run start:server
