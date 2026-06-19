@@ -253,7 +253,8 @@
 > ⚠️ Монорепо: при добавлении server-зависимостей делать `npm install` из **корня**; при странных DI-ошибках TypeORM — снести все `node_modules` + `package-lock.json` и переустановить (нужна консистентная подъёмка `@nestjs/*` в корневой `node_modules`).
 
 **Этап 3 — Telegram Mini App (клиент)** ✅ *(готово)*
-- ✅ SDK `@twa-dev/sdk` (`lib/telegram.ts`): `ready/expand`, тема (dark + bg_color), `initData` через axios-интерсептор (заголовок `x-telegram-init-data`).
+- ✅ SDK `@twa-dev/sdk` (`lib/telegram.ts`): `ready/expand`, **полноэкранный режим** (`requestFullscreen`, Bot API 8.0) + `disableVerticalSwipes`, тема (dark + bg_color), `initData` через axios-интерсептор (заголовок `x-telegram-init-data`).
+- ✅ **Safe-area Telegram**: `lib/telegram.ts` пишет `--tg-safe-{top,bottom,left,right}` из `safeAreaInset + contentSafeAreaInset`; `#root` (index.css) применяет верхний/боковые отступы, чтобы UI уходил из-под нативной панели Telegram (вне Telegram — фолбэк на `env()`).
 - ✅ Онбординг-гейт (`App.tsx` → `useCurrentUser`): новый юзер видит экран выбора базовой валюты (`Onboarding.tsx`).
 - ✅ Клиентская мультивалютность: выбор валюты в `AccountDialog`, единый `formatMoney`, общее состояние (`GET /accounts/net-worth`), итоги/графики в базовой валюте (`amountInBase`).
 - Общие типы/валюты берём из `@swt/shared`. **Грабли:** rollup не читает named-exports из CJS-сборки shared → в `vite.config.ts` алиас `@swt/shared` → `packages/shared/src/index.ts` (исходники, ESM). Сервер по-прежнему использует CJS-сборку `dist`.

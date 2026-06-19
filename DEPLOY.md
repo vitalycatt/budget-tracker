@@ -28,7 +28,8 @@
 3. Manual Deploy → Deploy latest commit (чтобы применились секреты).
 
 **Вариант Б — вручную (если сервис уже создан).** В настройках сервиса:
-- **Build Command:** `npm install && npm run build:server`
+- **Build Command:** `npm install --include=dev && npm run build:server`
+  *(флаг `--include=dev` обязателен — иначе при `NODE_ENV=production` не поставится `nest`/`typescript` и сборка упадёт `nest: not found`)*
 - **Start Command:** `npm run start:server`
 - **Environment:** `NODE_ENV=production`, `DB_*` (от вашей БД), `TELEGRAM_BOT_TOKEN`,
   `ANTHROPIC_API_KEY`, `CORS_ORIGIN`, опц. `ANTHROPIC_MODEL` (default `claude-haiku-4-5`).
