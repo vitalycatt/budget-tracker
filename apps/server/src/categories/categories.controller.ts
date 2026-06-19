@@ -12,6 +12,8 @@ import { CategoriesService } from './categories.service';
 import { createCategorySchema, CreateCategoryDto } from './dto/create-category.dto';
 import { updateCategorySchema, UpdateCategoryDto } from './dto/update-category.dto';
 import { ZodValidation } from '../common/decorators/zod-validation.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { User } from '../users/entities/user.entity';
 
 @Controller('categories')
 export class CategoriesController {
@@ -19,32 +21,32 @@ export class CategoriesController {
 
   @Post()
   @ZodValidation(createCategorySchema)
-  create(@Body() createCategoryDto: CreateCategoryDto) {
-    return this.categoriesService.create(createCategoryDto);
+  create(@CurrentUser() user: User, @Body() createCategoryDto: CreateCategoryDto) {
+    return this.categoriesService.create(user.id, createCategoryDto);
   }
 
   @Get()
-  findAll() {
-    return this.categoriesService.findAll();
+  findAll(@CurrentUser() user: User) {
+    return this.categoriesService.findAll(user.id);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.categoriesService.findOne(id);
+  findOne(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
+    return this.categoriesService.findOne(user.id, id);
   }
 
   @Patch(':id')
   @ZodValidation(updateCategorySchema)
   update(
+    @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateCategoryDto: UpdateCategoryDto,
   ) {
-    return this.categoriesService.update(id, updateCategoryDto);
+    return this.categoriesService.update(user.id, id, updateCategoryDto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.categoriesService.remove(id);
+  remove(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
+    return this.categoriesService.remove(user.id, id);
   }
 }
-

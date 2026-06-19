@@ -3,8 +3,10 @@ import { Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import type { Account } from '@/stores/financeStore';
+import { formatMoney } from '@swt/shared';
 import AccountDialog from '@/components/AccountDialog';
 import { useAccounts } from '@/hooks/use-accounts';
+import { useNetWorth } from '@/hooks/use-net-worth';
 
 const accountIcons = {
   bank: '🏦',
@@ -16,6 +18,7 @@ export default function Accounts() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const { data: accounts = [], isLoading } = useAccounts();
+  const { data: netWorth } = useNetWorth();
 
   const handleCreate = () => {
     setSelectedAccount(null);
@@ -29,10 +32,21 @@ export default function Accounts() {
 
   return (
     <div className="min-h-screen p-6">
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-4xl font-black mb-2">Счета</h1>
         <p className="text-muted-foreground font-semibold">Управление счетами</p>
       </div>
+
+      {netWorth && (
+        <Card className="p-5 mb-6 bg-accent/10 border-accent">
+          <div className="text-sm text-muted-foreground font-semibold mb-1">
+            Общее состояние
+          </div>
+          <div className="text-4xl font-black">
+            {formatMoney(netWorth.total, netWorth.baseCurrency)}
+          </div>
+        </Card>
+      )}
 
       <Button
         size="lg"
@@ -82,7 +96,7 @@ export default function Accounts() {
               </div>
               <div className="pt-3 border-t border-border">
                 <div className="text-sm text-muted-foreground font-semibold mb-1">Баланс</div>
-                <div className="text-3xl font-black">{Number(account.balance).toLocaleString('ru-RU')} ₽</div>
+                <div className="text-3xl font-black">{formatMoney(Number(account.balance), account.currency)}</div>
               </div>
             </Card>
           ))

@@ -7,8 +7,14 @@
     "packages/*",
     "apps/*"
   ],
+  "engines": {
+    "node": ">=20 <23"
+  },
   "scripts": {
     "build:shared": "npm run build --workspace @swt/shared",
+    "build:server": "npm run build:shared && npm run build --workspace smart-wallet-tracker-server",
+    "build:client": "npm run build --workspace vite_react_shadcn_ts",
+    "start:server": "node apps/server/dist/main.js",
     "dev:server": "npm run start:dev --workspace smart-wallet-tracker-server",
     "dev:client": "npm run dev --workspace vite_react_shadcn_ts",
     "build": "npm run build:shared && npm run build --workspace smart-wallet-tracker-server && npm run build --workspace vite_react_shadcn_ts"

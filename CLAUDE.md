@@ -42,21 +42,22 @@
 Пользователь мыслит **тремя сущностями**: Доходы, Расходы, Состояние/Счета.
 В реализации доходы и расходы — это одна таблица `Transaction` с полем `type`.
 
-### `User` *(ТРЕБУЕТСЯ ДОБАВИТЬ — сейчас отсутствует)*
+### `User` ✅ *(реализовано, Этап 1)*
 - `id` (UUID, PK)
 - `telegramId` (bigint, unique) — связь «1 TG-юзер = 1 юзер приложения»
 - `username`, `firstName`, `lastName`, `languageCode` (опционально, из Telegram)
 - `baseCurrency` (string ISO-4217, default `RUB`) — валюта для подсчёта общего «состояния» и сводной статистики
+- `isOnboarded` (boolean, default `false`) — прошёл ли пользователь онбординг (выбор базовой валюты)
 - `createdAt`, `updatedAt`
 
 ### `Transaction` — доходы и расходы
 - `id` (UUID, PK)
-- `userId` (FK → User) — **ТРЕБУЕТСЯ ДОБАВИТЬ**
+- `userId` (FK → User)
 - `type` (enum: `income` | `expense`)
 - `amount` (decimal 10,2) — в валюте счёта
-- `currency` (string ISO-4217) — валюта операции (= валюте счёта) — **ТРЕБУЕТСЯ ДОБАВИТЬ**
-- `exchangeRate` (decimal) — **снимок** курса `currency → user.baseCurrency` на момент операции — **ТРЕБУЕТСЯ ДОБАВИТЬ**
-- `amountInBase` (decimal 10,2) — сумма в базовой валюте (= `amount × exchangeRate`), для быстрой агрегации — **ТРЕБУЕТСЯ ДОБАВИТЬ**
+- `currency` (string ISO-4217) — валюта операции (= валюте счёта)
+- `exchangeRate` (decimal) — **снимок** курса `currency → user.baseCurrency` на момент операции
+- `amountInBase` (decimal 10,2) — сумма в базовой валюте (= `amount × exchangeRate`), для быстрой агрегации
 - `categoryId` (FK → Category)
 - `accountId` (FK → Account)
 - `description` (string ≤ 500)
@@ -65,10 +66,10 @@
 
 ### `Account` — банковские счета / состояние
 - `id` (UUID, PK)
-- `userId` (FK → User) — **ТРЕБУЕТСЯ ДОБАВИТЬ**
+- `userId` (FK → User)
 - `name` (string ≤ 100)
 - `type` (enum: `bank` | `card` | `cash`) — тип счёта (не валюта!)
-- `currency` (string ISO-4217, default `RUB`) — валюта счёта — **ТРЕБУЕТСЯ ДОБАВИТЬ**
+- `currency` (string ISO-4217, default `RUB`) — валюта счёта
 - `balance` (decimal 10,2, default 0) — в валюте счёта, пересчитывается автоматически при транзакциях
 - `color` (HEX `#RRGGBB`)
 - `createdAt`, `updatedAt`
@@ -78,7 +79,7 @@
 
 ### `Category` — справочник категорий
 - `id` (UUID, PK)
-- `userId` (FK → User) — **ТРЕБУЕТСЯ ДОБАВИТЬ** (категории должны быть приватными)
+- `userId` (FK → User) (категории должны быть приватными)
 - `name` (string ≤ 100)
 - `icon` (emoji)
 - `color` (HEX `#RRGGBB`)
@@ -87,7 +88,7 @@
 
 > Категории создаются **на лету** при вводе транзакции (отдельной страницы управления нет, см. раздел 3).
 
-### `ExchangeRate` — кэш курсов валют *(ТРЕБУЕТСЯ ДОБАВИТЬ)*
+### `ExchangeRate` — кэш курсов валют
 - `id` (UUID, PK)
 - `base` (string ISO-4217) — базовая валюта котировки
 - `quote` (string ISO-4217) — котируемая валюта
@@ -122,23 +123,24 @@
 
 ---
 
-## 3. Экраны (целевая структура)
+## 3. Экраны
 
-Видение пользователя — **3 страницы**. В текущем коде их 4 (есть отдельная Categories).
+Видение пользователя — **3 страницы**. Реализовано (Этап 5).
 
-| # | Страница | Назначение | Текущий статус |
-|---|---|---|---|
-| 1 | **Расходы** | Внести расход + статистика расходов (график, разбивка по категориям, список транзакций) | Частично: логика на Home + Transactions |
-| 2 | **Доходы** | Внести доход + статистика доходов + список транзакций | Частично: Home + Transactions |
-| 3 | **Счета** | Список счетов, балансы, суммарное состояние | ✅ Accounts |
+| # | Страница | Маршрут | Назначение | Статус |
+|---|---|---|---|---|
+| 1 | **Расходы** | `/` | Внести расход + статистика расходов (итог, график, разбивка по категориям, история) | ✅ `Transactions type="expense"` |
+| 2 | **Доходы** | `/income` | Внести доход + статистика доходов + история | ✅ `Transactions type="income"` |
+| 3 | **Счета** | `/accounts` | Список счетов, балансы, суммарное состояние | ✅ `Accounts` |
 
-**Решено:** отдельной страницы категорий **нет**. Категории создаются **на лету** при вводе
-транзакции (выбрать существующую или быстро создать новую). Текущую страницу `/categories`
-нужно убрать из навигации → привести к 3 страницам.
+**Реализовано:** отдельной страницы категорий **нет**. Категории создаются **на лету** при вводе
+транзакции (выбрать существующую или быстро создать новую прямо в диалоге). Страницы `Home`/`Categories`
+и `CategoryDialog` удалены; обе страницы расходов/доходов — это один параметризованный компонент
+`pages/Transactions.tsx` (тип приходит из маршрута).
 
-Текущая навигация (`BottomNav`): `/` Home, `/transactions`, `/categories`, `/accounts`
-(целевая — 3 пункта: Расходы / Доходы / Счета).
-Ввод транзакции — пошаговый диалог: **сумма (нумпад) → счёт → категория** (+ валюта берётся от счёта).
+Навигация (`BottomNav`): 3 пункта — **Расходы** (`/`) / **Доходы** (`/income`) / **Счета** (`/accounts`).
+Ввод транзакции — пошаговый диалог: **сумма (нумпад) → счёт → категория** (существующая или создать на лету;
+валюта берётся от счёта).
 
 ---
 
@@ -151,7 +153,7 @@
 - PostgreSQL + TypeORM 0.3 (БД `smart_wallet_tracker`, `synchronize` в dev)
 - Валидация: **Zod** через кастомный `ZodValidationPipe` + декоратор `@ZodValidation` (ошибки на русском)
 - Модули: `transactions`, `accounts`, `categories` (CRUD-контроллеры + сервисы)
-- Env: `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`, `PORT`, `NODE_ENV`, `CORS_ORIGIN`
+- Env (реально используются): `DATABASE_URL` *(или раздельные `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_DATABASE`)*, `PORT`, `NODE_ENV`, `CORS_ORIGIN`, `TELEGRAM_BOT_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`. Шаблон — `apps/server/env.example`. *(`DATABASE_URL` имеет приоритет; на Render даётся «Add from Database».)*
 
 ### Frontend — `apps/client`
 - React 18 + Vite 5 + TypeScript
@@ -159,32 +161,39 @@
 - Данные: **@tanstack/react-query** (хуки `use-transactions`/`use-accounts`/`use-categories`), `axios`
 - Стейт: `zustand` (`financeStore`) — содержит мок-данные, для API не используется
 - Графики: `recharts`, даты: `date-fns`, формы: `react-hook-form`
-- Env: `VITE_API_URL` (default `http://localhost:3000`)
+- Env (реально используется): `VITE_API_URL` (default `http://localhost:3000`). Шаблон — `apps/client/.env.example`.
 
 ### API (текущее)
-- `transactions`: `POST /` · `GET /?type=` · `GET /:id` · `DELETE /:id`
-- `accounts`: `POST /` · `GET /` · `GET /:id` · `PATCH /:id` · `DELETE /:id`
+- `users`: `GET /me` · `POST /me/onboarding` *(Этап 1)*
+- `transactions`: `POST /` · `GET /?type=` · `GET /:id` · `PATCH /:id` · `DELETE /:id` *(снимок курса при создании/редактировании; PATCH — Этап 6)*
+- `accounts`: `POST /` · `GET /` · `GET /net-worth` · `GET /:id` · `PATCH /:id` · `DELETE /:id` *(валюта счёта + состояние, Этап 2)*
 - `categories`: `POST /` · `GET /` · `GET /:id` · `PATCH /:id` · `DELETE /:id`
+- `exchange-rates`: `GET /` (курсы USD→X) · `POST /refresh` *(Этап 2)*
+
+> Все эндпоинты защищены `TelegramAuthGuard` (глобальный) и изолированы по `userId`.
+> Авторизация: заголовок `x-telegram-init-data` (HMAC по bot token) в prod; в dev — обход через фиксированного тестового юзера.
 
 ---
 
 ## 5. Что есть vs чего не хватает
 
 ### ✅ Реализовано
+- Монорепо (npm workspaces) + `packages/shared` (валюты, типы, Zod-схемы, `formatMoney`) *(Этап 0)*
+- **Мультипользовательность**: `User`, `userId` на всех таблицах, изоляция по `userId` *(Этап 1)*
+- **Telegram-авторизация**: `TelegramAuthGuard` (initData HMAC в prod, dev-обход), онбординг, дефолтные категории *(Этап 1)*
+- **Мультивалютность (сервер)**: `currency`/`exchangeRate`/`amountInBase`, `ExchangeRate`, фетч курсов + кэш, net-worth *(Этап 2)*
 - Три сущности (Transaction / Account / Category) с полным CRUD и Zod-валидацией
 - PostgreSQL + TypeORM, атомарный пересчёт баланса при транзакциях
+- **Telegram Mini App (клиент)**: `@twa-dev/sdk` (initData в API через axios-интерсептор, тема), онбординг-гейт *(Этап 3)*
+- **Клиент: мультивалютность** — выбор валюты счёта, `formatMoney` везде, общее состояние (net-worth), итоги в базовой валюте *(Этап 3)*
 - Клиент: 4 страницы, React Query, графики и статистика, пошаговый ввод транзакции
 - Mobile-first вёрстка (safe-area, нижняя навигация)
+- **Telegram-бот (текст)**: grammY (long-polling), парсинг фраз через Claude API (Haiku 4.5, structured output), категория на лету, выбор счёта инлайн-кнопками, подтверждение *(Этап 4)*
+- **Клиент: 3 страницы** — Расходы (`/`) / Доходы (`/income`) / Счета (`/accounts`); страница категорий убрана, категории создаются на лету в диалоге ввода *(Этап 5)*
+- **Редактирование транзакций**: `PATCH /transactions/:id` (откат+применение баланса атомарно, пересчёт снимка курса) + клиентский `EditTransactionDialog` (правка/удаление); фильтры истории по дате/сумме *(Этап 6)*
 
-### ❌ Не реализовано (план работ, по приоритету)
-1. **Мультипользовательность** — сущность `User`, `userId` на всех таблицах, изоляция данных. *(фундамент)*
-2. **Авторизация через Telegram** — валидация `initData` (HMAC по bot token) в Mini App; identify по `telegramId`.
-3. **Мультивалютность** (раздел 2.1) — поля `currency`/`exchangeRate`/`amountInBase`, `baseCurrency` у User, таблица `ExchangeRate`, суточный фетч с `open.er-api.com`, `formatMoney`.
-4. **Telegram-бот (текст)** — приём текстовых сообщений, **парсинг через LLM (Claude API)** → создание транзакции, подтверждение пользователю. Голос — позже.
-5. **Telegram Mini App SDK** на клиенте (`@twa-dev/sdk` / `telegram-web-app`): тема, `initData`, нативные кнопки.
-6. **Приведение к 3-страничной структуре** (раздел 3) — убрать страницу категорий, создание на лету.
-7. Редактирование транзакций (сейчас только удаление); фильтры по дате/сумме.
-8. *(позже)* Голосовой ввод в боте (audio → текст).
+### ❌ Не реализовано
+1. *(позже)* Голосовой ввод в боте (audio → текст).
 
 ---
 
@@ -226,32 +235,55 @@
 - Подключить `shared` в `apps/server` и `apps/client`.
 - Пересоздать схему БД с нуля (данные тестовые).
 
-**Этап 1 — Фундамент: пользователи и изоляция (приоритет)**
-- Сущность `User` (+ `telegramId`, `baseCurrency`), `userId` на Account/Category/Transaction.
-- Telegram-аутентификация: валидация `initData` (HMAC) в prod + dev-обход (фиксированный тестовый юзер).
-- Guard/middleware: каждый запрос фильтруется по `userId`; нельзя вернуть чужие данные.
-- Онбординг: при первом входе спросить базовую валюту + создать дефолтные категории.
+**Этап 1 — Фундамент: пользователи и изоляция (приоритет)** ✅ *(готово)*
+- ✅ Сущность `User` (+ `telegramId`, `baseCurrency`, `isOnboarded`), `userId` на Account/Category/Transaction.
+- ✅ Telegram-аутентификация (`TelegramAuthGuard`, глобальный): валидация `initData` (HMAC) в prod + dev-обход (фиксированный тестовый юзер `999000001`).
+- ✅ Изоляция: каждый запрос фильтруется по `userId` (декоратор `@CurrentUser`); чужие данные → 404.
+- ✅ Онбординг: `POST /users/me/onboarding` (базовая валюта); дефолтные категории создаются при первом входе.
+- Проверено e2e локально: создание юзера, дефолтные категории, инвариант баланса, изоляция, prod-отказ без initData.
 
-**Этап 2 — Мультивалютность**
-- Поля `currency` (Account/Transaction), `exchangeRate`, `amountInBase`; сущность `ExchangeRate`.
-- Сервис курсов: суточный фетч с `open.er-api.com` + кэш в БД (cron/фоновая задача).
-- При создании транзакции — снимок курса; «состояние» = сумма счетов в `baseCurrency` по текущим курсам.
-- Клиент: выбор валюты счёта, отображение через `formatMoney`.
+**Этап 2 — Мультивалютность** ✅ *(сервер готов)*
+- ✅ Поля `currency` (Account/Transaction), `exchangeRate`, `amountInBase`; сущность `ExchangeRate`.
+- ✅ Сервис курсов (`ExchangeRatesService`): фетч с `open.er-api.com` (пивот USD), кэш в БД, суточное обновление через `setInterval` + ленивое обновление на старте, fallback-курсы при недоступности API. *(не `@nestjs/schedule` — он конфликтует с Nest 10/TypeORM DI; см. ниже)*
+- ✅ При создании транзакции — снимок курса (`currency`/`exchangeRate`/`amountInBase`); «состояние» (`GET /accounts/net-worth`) = сумма счетов в `baseCurrency` по текущим курсам.
+- Проверено e2e: курсы фетчатся на старте, кросс-курсы (USD/EUR/RUB), снимок при транзакции, net-worth.
+- ⏳ Клиент (выбор валюты счёта, `formatMoney`) — отложено к Этапу 3/5 (клиент пока не подключён к API/авторизации).
 
-**Этап 3 — Telegram Mini App (клиент)**
-- Подключить SDK (`@twa-dev/sdk`), прокинуть `initData` в API, применить тему Telegram.
+> ⚠️ **Грабли:** `@nestjs/schedule` ломает DI (`TypeOrmCoreModule ModuleRef`) на Nest 10 — не ставить. Курсы обновляем своим `setInterval`.
+> ⚠️ Монорепо: при добавлении server-зависимостей делать `npm install` из **корня**; при странных DI-ошибках TypeORM — снести все `node_modules` + `package-lock.json` и переустановить (нужна консистентная подъёмка `@nestjs/*` в корневой `node_modules`).
 
-**Этап 4 — Telegram-бот (текст)**
-- Бот принимает текст → LLM (Claude API) извлекает сумму/тип/категорию/валюту → создаёт транзакцию.
-- Неоднозначность → переспрос инлайн-кнопками (счёт/категория). Категория не найдена → создать на лету.
-- Подтверждение пользователю. *(Голос — отдельный поздний этап.)*
+**Этап 3 — Telegram Mini App (клиент)** ✅ *(готово)*
+- ✅ SDK `@twa-dev/sdk` (`lib/telegram.ts`): `ready/expand`, тема (dark + bg_color), `initData` через axios-интерсептор (заголовок `x-telegram-init-data`).
+- ✅ Онбординг-гейт (`App.tsx` → `useCurrentUser`): новый юзер видит экран выбора базовой валюты (`Onboarding.tsx`).
+- ✅ Клиентская мультивалютность: выбор валюты в `AccountDialog`, единый `formatMoney`, общее состояние (`GET /accounts/net-worth`), итоги/графики в базовой валюте (`amountInBase`).
+- Общие типы/валюты берём из `@swt/shared`. **Грабли:** rollup не читает named-exports из CJS-сборки shared → в `vite.config.ts` алиас `@swt/shared` → `packages/shared/src/index.ts` (исходники, ESM). Сервер по-прежнему использует CJS-сборку `dist`.
+- ⏳ Не проверено в реальном Telegram (нужен бот/туннель); локально dev-обход работает.
 
-**Этап 5 — UI к 3 страницам**
-- Убрать страницу категорий из навигации (создание на лету при вводе).
+**Этап 4 — Telegram-бот (текст)** ✅ *(код готов; не проверен вживую — нужны TELEGRAM_BOT_TOKEN + ANTHROPIC_API_KEY)*
+- ✅ Модуль `telegram/`: `TelegramBotService` (grammY, long-polling, свой lifecycle через `OnModuleInit/OnModuleDestroy`, **без** `nestjs-telegraf`) + `TransactionParserService` (Claude API).
+- ✅ Парсинг фразы через Claude (`claude-haiku-4-5`, structured output: raw JSON Schema + валидация Zod на нашей стороне; `ANTHROPIC_MODEL` для смены модели).
+- ✅ Поток: текст → `findOrCreateByTelegram` → парсинг → категория (найти/создать на лету) → счёт (нет — просим создать; один — берём; несколько — инлайн-кнопки) → `TransactionsService.create` (снимок курса) → подтверждение через `formatMoney`.
+- ✅ Бот запускается только при заданном `TELEGRAM_BOT_TOKEN` и `ANTHROPIC_API_KEY`; иначе спит — сервер работает как раньше.
+- *(Голос — отдельный поздний этап.)*
+
+> ⚠️ **Грабли:** `zodOutputFormat` из `@anthropic-ai/sdk/helpers/zod` требует Zod v4, а в проекте Zod v3 → используем raw JSON Schema в `output_config.format` + `safeParse` на нашей стороне.
+> ⚠️ После установки `grammy`/`@anthropic-ai/sdk` хойст `rxjs` побился (пропадали файлы, `nest build` падал) — лечится полной переустановкой (снести все `node_modules` + `package-lock.json`, `npm install`), как и описано в граблях Этапа 2.
+
+**Этап 5 — UI к 3 страницам** ✅ *(готово)*
+- ✅ Навигация из 3 пунктов: Расходы (`/`) / Доходы (`/income`) / Счета (`/accounts`).
+- ✅ Страницы расходов/доходов — один параметризованный компонент `pages/Transactions.tsx` (итог + график + разбивка + история + FAB). Удалены `Home`, `Categories`, `CategoryDialog`.
+- ✅ Категории создаются на лету в `AddTransactionDialog` (шаг «категория» → «Новая категория» → имя/иконка/цвет → создать и добавить). Тип определяется страницей (тогл типа в диалоге убран).
+- Проверено: `tsc --noEmit` чисто, `vite build` успешно. Вживую в Telegram не гонялось.
+
+> Историческое: убрать страницу категорий из навигации (создание на лету при вводе).
 - Привести к 3 экранам: Расходы / Доходы / Счета (раздел 3).
 
-**Этап 6 — Полировка**
-- Редактирование транзакций, фильтры по дате/сумме.
+**Этап 6 — Полировка** ✅ *(редактирование + фильтры готовы)*
+- ✅ Редактирование транзакций: сервер `PATCH /transactions/:id` (`update-transaction.dto` = partial; в сервисе атомарно откатываем старый эффект на старом счёте и применяем новый на новом, пересчитываем `exchangeRate`/`amountInBase` на момент правки, валидируем минус).
+- ✅ Клиент: `EditTransactionDialog` (тип/сумма/счёт/категория/описание/дата + удаление), карточки истории кликабельны; `useUpdateTransaction`.
+- ✅ Фильтры истории по дате (с/по) и сумме (от/до) на странице `Transactions` (клиентская фильтрация списка).
+- Проверено: `tsc --noEmit` (сервер+клиент) чисто, `nest build` и `vite build` успешно.
+- *(позже)* Голосовой ввод в боте (audio → текст).
 - *(позже)* Голосовой ввод в боте (audio → текст).
 
 ---
@@ -271,8 +303,11 @@
 ## 9. Структура репозитория (целевая)
 
 ```
-smart-wallet-tracker/
+budget-tracker/
 ├── CLAUDE.md            ← этот файл (основа проекта)
+├── DEPLOY.md            гайд по деплою + настройке Telegram Mini App
+├── render.yaml          Render Blueprint: бэкенд (web) + PostgreSQL
+├── vercel.json          сборка клиента из корня монорепо (SPA-rewrites)
 ├── packages/
 │   └── shared/          общие TS-типы, enum'ы валют, Zod-схемы (сервер + клиент)
 └── apps/
@@ -281,3 +316,10 @@ smart-wallet-tracker/
     └── client/          React + Vite + shadcn/ui
         └── src/{pages,components,hooks,stores,lib}
 ```
+
+## 10. Деплой (см. DEPLOY.md)
+
+- **Бэкенд + БД** → Render (`render.yaml`): build `npm install && npm run build:server`, start `npm run start:server`.
+- **Клиент** → Vercel (`vercel.json`): Root Directory = **корень репо**, build `npm run build:client`, output `apps/client/dist`, env `VITE_API_URL`.
+- **Прод-инвариант:** `NODE_ENV=production` отключает dev-обход → нужен валидный Telegram `initData`; у бэкенда и у бота-владельца Mini App — **один `TELEGRAM_BOT_TOKEN`**. `CORS_ORIGIN` = URL клиента.
+- **Mini App:** в @BotFather кнопка-меню бота → URL клиента (Vercel). Бот (long-polling) живёт внутри NestJS; на free-tier Render засыпает.

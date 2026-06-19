@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transactionsApi } from '@/lib/api';
-import type { Transaction, TransactionType } from '@/stores/financeStore';
+import type { CreateTransactionInput, TransactionType } from '@/stores/financeStore';
 import { toast } from 'sonner';
 
 const TRANSACTIONS_QUERY_KEY = ['transactions'] as const;
@@ -19,7 +19,7 @@ export function useCreateTransaction() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: Omit<Transaction, 'id'>) => {
+    mutationFn: async (data: CreateTransactionInput) => {
       const response = await transactionsApi.create(data);
       return response.data;
     },
@@ -30,6 +30,25 @@ export function useCreateTransaction() {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Ошибка при создании транзакции');
+    },
+  });
+}
+
+export function useUpdateTransaction() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<CreateTransactionInput> }) => {
+      const response = await transactionsApi.update(id, data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEY });
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      toast.success('Транзакция обновлена');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Ошибка при обновлении транзакции');
     },
   });
 }

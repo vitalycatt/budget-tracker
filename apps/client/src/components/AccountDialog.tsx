@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { Account } from '@/stores/financeStore';
+import { CURRENCIES, CURRENCY_META, type Currency } from '@swt/shared';
 import { useCreateAccount, useUpdateAccount, useDeleteAccount } from '@/hooks/use-accounts';
 
 interface AccountDialogProps {
@@ -23,6 +24,7 @@ const colors = ['#BFFF00', '#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94'
 export default function AccountDialog({ open, onOpenChange, account }: AccountDialogProps) {
   const [name, setName] = useState('');
   const [type, setType] = useState<'bank' | 'card' | 'cash'>('card');
+  const [currency, setCurrency] = useState<Currency>('RUB');
   const [balance, setBalance] = useState('');
   const [color, setColor] = useState(colors[0]);
   const createAccount = useCreateAccount();
@@ -33,11 +35,13 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
     if (account) {
       setName(account.name);
       setType(account.type);
+      setCurrency(account.currency);
       setBalance(account.balance.toString());
       setColor(account.color);
     } else {
       setName('');
       setType('card');
+      setCurrency('RUB');
       setBalance('0');
       setColor(colors[0]);
     }
@@ -51,6 +55,7 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
     const accountData = {
       name: name.trim(),
       type,
+      currency,
       balance: parseFloat(balance) || 0,
       color,
     };
@@ -116,6 +121,30 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
                 </Button>
               ))}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="font-bold">Валюта</Label>
+            <div className="grid grid-cols-5 gap-2">
+              {CURRENCIES.map((code) => (
+                <Button
+                  key={code}
+                  type="button"
+                  variant={currency === code ? 'default' : 'outline'}
+                  disabled={!!account}
+                  className="h-12 flex flex-col gap-0.5 font-bold p-1"
+                  onClick={() => setCurrency(code)}
+                >
+                  <span className="text-sm">{CURRENCY_META[code].symbol}</span>
+                  <span className="text-[10px]">{code}</span>
+                </Button>
+              ))}
+            </div>
+            {account && (
+              <p className="text-xs text-muted-foreground font-medium">
+                Валюту существующего счёта изменить нельзя
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

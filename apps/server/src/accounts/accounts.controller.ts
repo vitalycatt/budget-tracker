@@ -12,6 +12,8 @@ import { AccountsService } from './accounts.service';
 import { createAccountSchema, CreateAccountDto } from './dto/create-account.dto';
 import { updateAccountSchema, UpdateAccountDto } from './dto/update-account.dto';
 import { ZodValidation } from '../common/decorators/zod-validation.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { User } from '../users/entities/user.entity';
 
 @Controller('accounts')
 export class AccountsController {
@@ -19,32 +21,38 @@ export class AccountsController {
 
   @Post()
   @ZodValidation(createAccountSchema)
-  create(@Body() createAccountDto: CreateAccountDto) {
-    return this.accountsService.create(createAccountDto);
+  create(@CurrentUser() user: User, @Body() createAccountDto: CreateAccountDto) {
+    return this.accountsService.create(user.id, createAccountDto);
   }
 
   @Get()
-  findAll() {
-    return this.accountsService.findAll();
+  findAll(@CurrentUser() user: User) {
+    return this.accountsService.findAll(user.id);
+  }
+
+  // Должен идти ДО ':id', иначе ParseUUIDPipe отвергнет 'net-worth'
+  @Get('net-worth')
+  netWorth(@CurrentUser() user: User) {
+    return this.accountsService.getNetWorth(user.id, user.baseCurrency);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.accountsService.findOne(id);
+  findOne(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
+    return this.accountsService.findOne(user.id, id);
   }
 
   @Patch(':id')
   @ZodValidation(updateAccountSchema)
   update(
+    @CurrentUser() user: User,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateAccountDto: UpdateAccountDto,
   ) {
-    return this.accountsService.update(id, updateAccountDto);
+    return this.accountsService.update(user.id, id, updateAccountDto);
   }
 
   @Delete(':id')
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.accountsService.remove(id);
+  remove(@CurrentUser() user: User, @Param('id', ParseUUIDPipe) id: string) {
+    return this.accountsService.remove(user.id, id);
   }
 }
-

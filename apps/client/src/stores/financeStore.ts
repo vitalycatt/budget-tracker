@@ -1,4 +1,7 @@
 import { create } from "zustand";
+import type { Currency } from "@swt/shared";
+
+export type { Currency } from "@swt/shared";
 
 export type TransactionType = "income" | "expense";
 
@@ -14,6 +17,7 @@ export interface Account {
   id: string;
   name: string;
   type: "bank" | "card" | "cash";
+  currency: Currency;
   balance: number;
   color: string;
 }
@@ -22,10 +26,23 @@ export interface Transaction {
   id: string;
   type: TransactionType;
   amount: number;
+  currency: Currency;
+  exchangeRate?: number;
+  amountInBase?: number;
   categoryId: string;
   accountId: string;
   description: string;
-  date: Date;
+  date: Date | string;
+}
+
+/** Полезная нагрузка для создания транзакции (валюта/курс выводятся сервером). */
+export interface CreateTransactionInput {
+  type: TransactionType;
+  amount: number;
+  categoryId: string;
+  accountId: string;
+  description: string;
+  date: Date | string;
 }
 
 interface FinanceStore {
@@ -86,6 +103,7 @@ export const useFinanceStore = create<FinanceStore>((set) => ({
       id: "1",
       name: "Основная карта",
       type: "card",
+      currency: "RUB",
       balance: 50000,
       color: "#BFFF00",
     },
@@ -93,6 +111,7 @@ export const useFinanceStore = create<FinanceStore>((set) => ({
       id: "2",
       name: "Наличные",
       type: "cash",
+      currency: "RUB",
       balance: 5000,
       color: "#000000",
     },
@@ -102,6 +121,7 @@ export const useFinanceStore = create<FinanceStore>((set) => ({
       id: "1",
       type: "expense",
       amount: 1500,
+      currency: "RUB",
       categoryId: "1",
       accountId: "1",
       description: "Электричество",
@@ -111,6 +131,7 @@ export const useFinanceStore = create<FinanceStore>((set) => ({
       id: "2",
       type: "income",
       amount: 50000,
+      currency: "RUB",
       categoryId: "5",
       accountId: "1",
       description: "Зарплата",
