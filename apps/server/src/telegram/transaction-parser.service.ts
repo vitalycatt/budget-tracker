@@ -21,9 +21,14 @@ export const parsedTransactionSchema = z.object({
 
 export type ParsedTransaction = z.infer<typeof parsedTransactionSchema>;
 
-const DEFAULT_MODEL = 'claude-haiku-4-5';
+/** Провайдер LLM для парсинга. Anthropic — основной; groq — бесплатная альтернатива. */
+type Provider = 'anthropic' | 'groq';
 
-/** JSON Schema для structured output (без ограничений значений — их проверяет Zod на нашей стороне). */
+const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-4-5';
+const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+/** JSON Schema для structured output Anthropic (значения проверяет Zod на нашей стороне). */
 const OUTPUT_JSON_SCHEMA = {
   type: 'object',
   properties: {
@@ -41,49 +46,108 @@ const OUTPUT_JSON_SCHEMA = {
 @Injectable()
 export class TransactionParserService {
   private readonly logger = new Logger(TransactionParserService.name);
-  private readonly client: Anthropic | null;
-  private readonly model: string;
+  private readonly provider: Provider;
+  // Anthropic
+  private readonly anthropic: Anthropic | null;
+  private readonly anthropicModel: string;
+  // Groq (OpenAI-совместимый REST)
+  private readonly groqKey: string | null;
+  private readonly groqModel: string;
 
   constructor() {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    this.model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
-    this.client = apiKey ? new Anthropic({ apiKey }) : null;
-    if (!this.client) {
-      this.logger.warn('ANTHROPIC_API_KEY не задан — парсинг сообщений бота отключён');
+    this.provider = (process.env.LLM_PROVIDER as Provider) || 'anthropic';
+
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    this.anthropicModel = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
+    this.anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
+
+    this.groqKey = process.env.GROQ_API_KEY || null;
+    this.groqModel = process.env.GROQ_MODEL || DEFAULT_GROQ_MODEL;
+
+    if (!this.isEnabled) {
+      this.logger.warn(
+        `Парсер отключён: для провайдера «${this.provider}» не задан ключ ` +
+          `(${this.provider === 'groq' ? 'GROQ_API_KEY' : 'ANTHROPIC_API_KEY'}).`,
+      );
+    } else {
+      this.logger.log(`Парсер: провайдер «${this.provider}»`);
     }
   }
 
+  /** Готов ли выбранный провайдер (есть ключ). Бот стартует только при true. */
   get isEnabled(): boolean {
-    return this.client !== null;
+    return this.provider === 'groq' ? this.groqKey !== null : this.anthropic !== null;
   }
 
   /**
-   * Извлекает из свободной фразы сумму, тип, категорию и описание.
+   * Извлекает из свободной фразы сумму, тип, категорию, описание и дату.
    * `existingCategories` — имена категорий пользователя, чтобы модель переиспользовала их.
    * Возвращает null, если сообщение не похоже на транзакцию или парсинг не удался.
    */
   async parse(text: string, existingCategories: string[]): Promise<ParsedTransaction | null> {
-    if (!this.client) {
-      throw new Error('Парсер недоступен: не задан ANTHROPIC_API_KEY');
+    if (!this.isEnabled) {
+      throw new Error('Парсер недоступен: не задан ключ LLM-провайдера');
     }
 
+    const system = this.buildSystemPrompt(existingCategories);
+    const raw =
+      this.provider === 'groq'
+        ? await this.callGroq(system, text)
+        : await this.callAnthropic(system, text);
+    if (!raw) return null;
+
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(this.extractJson(raw));
+    } catch (error) {
+      this.logger.warn(`Не удалось распарсить JSON ответа модели: ${(error as Error).message}`);
+      return null;
+    }
+
+    const result = parsedTransactionSchema.safeParse(parsedJson);
+    if (!result.success) {
+      this.logger.warn(`Ответ модели не прошёл валидацию: ${result.error.message}`);
+      return null;
+    }
+
+    const parsed = result.data;
+    if (!parsed.isTransaction || parsed.amount <= 0) {
+      return null;
+    }
+    return parsed;
+  }
+
+  /** Общий системный промпт. Для Groq дополняем явным требованием вернуть JSON. */
+  private buildSystemPrompt(existingCategories: string[]): string {
     const categoriesHint = existingCategories.length
       ? `Существующие категории пользователя (переиспользуй подходящую, не выдумывай новую без необходимости): ${existingCategories.join(', ')}.`
       : 'У пользователя пока нет категорий — предложи подходящее короткое название.';
 
     const today = new Date().toISOString().slice(0, 10);
-    const system = [
+    const lines = [
       'Ты — помощник учёта личных финансов. Пользователь пишет короткие фразы о тратах и доходах на русском.',
       'Извлеки из фразы: тип (доход income / расход expense), сумму (число), категорию и краткое описание.',
       'Примеры: «потратил 500 на кофе» → expense, 500, Еда, кофе. «зарплата 120000» → income, 120000, Зарплата, зарплата.',
       `Сегодня ${today}. Если в тексте есть дата или относительное указание («вчера», «позавчера», «15 мая») — верни поле date в формате YYYY-MM-DD; иначе опусти его (будет сегодня).`,
       'Если фраза не описывает финансовую операцию — верни isTransaction=false и нули/пустые строки.',
       categoriesHint,
-    ].join(' ');
+    ];
 
+    if (this.provider === 'groq') {
+      lines.push(
+        'Верни СТРОГО один JSON-объект с полями: isTransaction (boolean), type ("income"|"expense"), ' +
+          'amount (number), categoryName (string), description (string), date (string "YYYY-MM-DD", опционально). ' +
+          'Без markdown, без пояснений — только JSON.',
+      );
+    }
+    return lines.join(' ');
+  }
+
+  /** Anthropic Messages API со structured output; возвращает текст ответа (JSON) или null. */
+  private async callAnthropic(system: string, text: string): Promise<string | null> {
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
+      const response = await this.anthropic!.messages.create({
+        model: this.anthropicModel,
         max_tokens: 512,
         system,
         messages: [{ role: 'user', content: text }],
@@ -91,26 +155,53 @@ export class TransactionParserService {
           format: { type: 'json_schema', schema: OUTPUT_JSON_SCHEMA },
         },
       });
-
-      const jsonText = response.content
+      return response.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')
         .map((block) => block.text)
         .join('');
-
-      const result = parsedTransactionSchema.safeParse(JSON.parse(jsonText));
-      if (!result.success) {
-        this.logger.warn(`Ответ модели не прошёл валидацию: ${result.error.message}`);
-        return null;
-      }
-
-      const parsed = result.data;
-      if (!parsed.isTransaction || parsed.amount <= 0) {
-        return null;
-      }
-      return parsed;
     } catch (error) {
-      this.logger.error(`Ошибка парсинга через Claude: ${(error as Error).message}`);
+      this.logger.error(`Ошибка парсинга через Anthropic: ${(error as Error).message}`);
       return null;
     }
+  }
+
+  /** Groq (OpenAI-совместимый) chat/completions в JSON-режиме; возвращает текст ответа или null. */
+  private async callGroq(system: string, text: string): Promise<string | null> {
+    try {
+      const res = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.groqKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.groqModel,
+          max_tokens: 512,
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: text },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        this.logger.error(`Groq ${res.status}: ${body.slice(0, 300)}`);
+        return null;
+      }
+      const data: any = await res.json();
+      return data?.choices?.[0]?.message?.content ?? null;
+    } catch (error) {
+      this.logger.error(`Ошибка парсинга через Groq: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  /** Достаёт JSON-объект из ответа (на случай markdown-обёрток или текста вокруг). */
+  private extractJson(s: string): string {
+    const start = s.indexOf('{');
+    const end = s.lastIndexOf('}');
+    return start >= 0 && end > start ? s.slice(start, end + 1) : s;
   }
 }
