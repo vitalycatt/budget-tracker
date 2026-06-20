@@ -1,6 +1,11 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-import { Bot, InlineKeyboard } from 'grammy';
+import {
+  Bot,
+  Context,
+  InlineKeyboard,
+  session,
+  SessionFlavor,
+} from 'grammy';
 import { formatMoney, Currency } from '@swt/shared';
 import { UsersService } from '../users/users.service';
 import { AccountsService } from '../accounts/accounts.service';
@@ -8,25 +13,36 @@ import { CategoriesService } from '../categories/categories.service';
 import { CategoryType } from '../categories/entities/category.entity';
 import { TransactionsService } from '../transactions/transactions.service';
 import { TransactionParserService } from './transaction-parser.service';
+import {
+  Draft,
+  AccountLite,
+  renderDraftText,
+  mainKeyboard,
+  accountKeyboard,
+  categoryKeyboard,
+  dateKeyboard,
+  formatDateLabel,
+} from './draft-card';
 
-/** Отложенная транзакция: ждём, пока пользователь выберет счёт инлайн-кнопкой. */
-interface PendingTransaction {
-  userId: string;
-  baseCurrency: string;
-  type: 'income' | 'expense';
-  amount: number;
-  categoryId: string;
-  description: string;
+/** Какое поле черновика бот ждёт текстом от пользователя. */
+type EditField = 'amount' | 'desc' | 'newcat' | 'datecustom';
+
+interface SessionData {
+  draft?: Draft;
+  editing?: EditField | null;
 }
+
+type MyContext = Context & SessionFlavor<SessionData>;
 
 const NEW_CATEGORY_ICON = '🏷️';
 const NEW_CATEGORY_COLOR = '#64748B';
+/** Черновик «протухает» — защита от старых callback'ов после простоя. */
+const DRAFT_TTL_MS = 30 * 60 * 1000;
 
 @Injectable()
 export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramBotService.name);
-  private bot: Bot | null = null;
-  private readonly pending = new Map<string, PendingTransaction>();
+  private bot: Bot<MyContext> | null = null;
 
   constructor(
     private readonly usersService: UsersService,
@@ -47,8 +63,15 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.bot = new Bot(token);
+    this.bot = new Bot<MyContext>(token);
+    this.bot.use(session({ initial: (): SessionData => ({ draft: undefined, editing: null }) }));
     this.registerHandlers(this.bot);
+
+    void this.bot.api.setMyCommands([
+      { command: 'start', description: 'Начало работы' },
+      { command: 'undo', description: 'Отменить последнюю операцию' },
+      { command: 'help', description: 'Как пользоваться' },
+    ]);
 
     // Long-polling в фоне (не блокируем bootstrap Nest)
     void this.bot.start({
@@ -62,25 +85,45 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private registerHandlers(bot: Bot): void {
+  private registerHandlers(bot: Bot<MyContext>): void {
     bot.catch((err) => this.logger.error(`Ошибка бота: ${err.message}`));
 
     bot.command('start', (ctx) =>
       ctx.reply(
-        'Привет! Я помогаю вести финансы. Просто напишите трату или доход — например ' +
-          '«потратил 500 на кофе» или «зарплата 120000».',
+        'Привет! Я помогаю вести финансы.\n\n' +
+          'Просто напишите трату или доход — например «потратил 500 на кофе» или ' +
+          '«вчера зарплата 120000». Я покажу черновик, его можно поправить и сохранить.\n\n' +
+          '/undo — отменить последнюю операцию.',
       ),
     );
+    bot.command('help', (ctx) =>
+      ctx.reply(
+        'Напишите операцию свободным текстом: «такси 700», «кофе 200 вчера», «зарплата 120000».\n' +
+          'Я разберу фразу и покажу карточку-черновик — там можно изменить сумму, тип, счёт, ' +
+          'категорию, дату и описание, затем нажать «Сохранить».\n\n' +
+          'После сохранения есть кнопка «↩️ Отменить». Команда /undo отменяет последнюю операцию.',
+      ),
+    );
+    bot.command('undo', (ctx) => this.handleUndoCommand(ctx));
 
     bot.on('message:text', (ctx) => this.handleText(ctx));
     bot.on('callback_query:data', (ctx) => this.handleCallback(ctx));
   }
 
-  private async handleText(ctx: any): Promise<void> {
+  // ─────────────────────────── Текстовые сообщения ───────────────────────────
+
+  private async handleText(ctx: MyContext): Promise<void> {
     const from = ctx.from;
-    if (!from) return;
+    const text = ctx.message?.text;
+    if (!from || !text) return;
 
     try {
+      // Если ждём правку конкретного поля — трактуем сообщение как значение, не парсим заново.
+      if (ctx.session.editing && ctx.session.draft) {
+        await this.applyFieldEdit(ctx, ctx.session.editing, text);
+        return;
+      }
+
       const user = await this.usersService.findOrCreateByTelegram({
         id: from.id,
         first_name: from.first_name,
@@ -89,15 +132,13 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
         language_code: from.language_code,
       });
 
-      const [categories, accounts] = await Promise.all([
+      const [categories, accountsAll] = await Promise.all([
         this.categoriesService.findAll(user.id),
         this.accountsService.findAll(user.id),
       ]);
+      const accounts = accountsAll.filter((a) => !a.isArchived);
 
-      const parsed = await this.parser.parse(
-        ctx.message.text,
-        categories.map((c) => c.name),
-      );
+      const parsed = await this.parser.parse(text, categories.map((c) => c.name));
       if (!parsed) {
         await ctx.reply(
           'Не понял операцию. Опишите трату или доход, например: «потратил 500 на кофе».',
@@ -105,107 +146,340 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // Категория: ищем существующую нужного типа или создаём на лету
-      const categoryType = parsed.type as CategoryType;
-      let category = categories.find(
-        (c) => c.type === categoryType && c.name.toLowerCase() === parsed.categoryName.toLowerCase(),
-      );
-      if (!category) {
-        category = await this.categoriesService.create(user.id, {
-          name: parsed.categoryName,
-          icon: NEW_CATEGORY_ICON,
-          color: NEW_CATEGORY_COLOR,
-          type: categoryType,
-        });
-      }
-
-      // Счёт: нет — просим создать; один — используем; несколько — переспрашиваем
       if (accounts.length === 0) {
         await ctx.reply('Сначала создайте счёт в приложении, затем повторите операцию.');
         return;
       }
 
-      const pending: PendingTransaction = {
+      // Иконку категории берём у существующей одноимённой (тот же тип), иначе дефолт.
+      const categoryType = parsed.type as CategoryType;
+      const existing = categories.find(
+        (c) => c.type === categoryType && c.name.toLowerCase() === parsed.categoryName.toLowerCase(),
+      );
+
+      const draft: Draft = {
         userId: user.id,
         baseCurrency: user.baseCurrency,
         type: parsed.type,
         amount: parsed.amount,
-        categoryId: category.id,
+        categoryName: existing?.name ?? parsed.categoryName,
+        categoryIcon: existing?.icon ?? NEW_CATEGORY_ICON,
+        accountId: accounts.length === 1 ? accounts[0].id : undefined,
         description: parsed.description || parsed.categoryName,
+        date: this.resolveParsedDate(parsed.date),
+        updatedAt: Date.now(),
       };
 
-      if (accounts.length === 1) {
-        await this.commitTransaction(ctx, pending, accounts[0].id);
+      ctx.session.draft = draft;
+      ctx.session.editing = null;
+
+      const account = accounts.find((a) => a.id === draft.accountId);
+      const sent = await ctx.reply(renderDraftText(draft, account), {
+        parse_mode: 'HTML',
+        reply_markup: mainKeyboard(draft),
+      });
+      draft.cardMessageId = sent.message_id;
+    } catch (error) {
+      this.logger.error(`handleText: ${(error as Error).message}`);
+      await ctx.reply('Произошла ошибка. Попробуйте ещё раз.');
+    }
+  }
+
+  /** Применяет введённое текстом значение к полю черновика и обновляет карточку. */
+  private async applyFieldEdit(ctx: MyContext, field: EditField, text: string): Promise<void> {
+    const draft = ctx.session.draft!;
+    switch (field) {
+      case 'amount': {
+        const value = Number(text.replace(',', '.').replace(/[^\d.]/g, ''));
+        if (!Number.isFinite(value) || value <= 0) {
+          await ctx.reply('Введите сумму числом, например 500.');
+          return;
+        }
+        draft.amount = Number(value.toFixed(2));
+        break;
+      }
+      case 'desc':
+        draft.description = text.trim().slice(0, 500);
+        break;
+      case 'newcat':
+        draft.categoryName = text.trim().slice(0, 100);
+        draft.categoryIcon = NEW_CATEGORY_ICON;
+        break;
+      case 'datecustom': {
+        const iso = this.parseManualDate(text);
+        if (!iso) {
+          await ctx.reply('Не понял дату. Формат: дд.мм.гггг, например 15.05.2026.');
+          return;
+        }
+        draft.date = iso;
+        break;
+      }
+    }
+    ctx.session.editing = null;
+    await this.refreshCard(ctx, draft);
+  }
+
+  // ─────────────────────────── Callback-кнопки ───────────────────────────
+
+  private async handleCallback(ctx: MyContext): Promise<void> {
+    const data = ctx.callbackQuery?.data;
+    if (!data) return;
+
+    try {
+      if (data.startsWith('undo:')) return await this.handleUndoCallback(ctx, data.slice(5));
+      if (data === 'dismiss') {
+        await ctx.editMessageReplyMarkup();
+        await ctx.answerCallbackQuery({ text: 'Ок, оставил.' });
         return;
       }
 
-      // Несколько счетов → инлайн-кнопки
-      const pendingId = randomUUID().slice(0, 8);
-      this.pending.set(pendingId, pending);
-
-      const keyboard = new InlineKeyboard();
-      for (const acc of accounts) {
-        keyboard.text(`${acc.name} (${acc.currency})`, `acc:${pendingId}:${acc.id}`).row();
+      const draft = ctx.session.draft;
+      if (!draft || Date.now() - draft.updatedAt > DRAFT_TTL_MS) {
+        ctx.session.draft = undefined;
+        ctx.session.editing = null;
+        await ctx.answerCallbackQuery({ text: 'Черновик устарел, повторите ввод.' });
+        return;
       }
-      const sign = parsed.type === 'expense' ? '−' : '+';
-      await ctx.reply(
-        `${sign}${parsed.amount} · ${category.name}\nВыберите счёт:`,
-        { reply_markup: keyboard },
-      );
-    } catch (error) {
-      this.logger.error(`handleText: ${(error as Error).message}`);
-      await ctx.reply('Произошла ошибка при сохранении операции. Попробуйте ещё раз.');
-    }
-  }
 
-  private async handleCallback(ctx: any): Promise<void> {
-    const data: string = ctx.callbackQuery.data;
-    if (!data.startsWith('acc:')) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
-    const [, pendingId, accountId] = data.split(':');
-    const pending = this.pending.get(pendingId);
-    if (!pending) {
-      await ctx.answerCallbackQuery({ text: 'Операция устарела, повторите ввод.' });
-      return;
-    }
-    this.pending.delete(pendingId);
-
-    try {
-      await this.commitTransaction(ctx, pending, accountId, true);
-      await ctx.answerCallbackQuery();
+      await this.routeDraftCallback(ctx, draft, data);
     } catch (error) {
       this.logger.error(`handleCallback: ${(error as Error).message}`);
-      await ctx.answerCallbackQuery({ text: 'Не удалось сохранить операцию.' });
+      await ctx.answerCallbackQuery({ text: 'Не удалось обработать действие.' });
     }
   }
 
-  /** Создаёт транзакцию и отправляет подтверждение. */
-  private async commitTransaction(
-    ctx: any,
-    pending: PendingTransaction,
-    accountId: string,
-    edit = false,
-  ): Promise<void> {
-    const tx = await this.transactionsService.create(pending.userId, pending.baseCurrency, {
-      type: pending.type,
-      amount: pending.amount,
-      categoryId: pending.categoryId,
-      accountId,
-      description: pending.description,
-      date: new Date(),
-    });
-
-    const sign = tx.type === 'expense' ? '−' : '+';
-    const money = formatMoney(Number(tx.amount), tx.currency as Currency);
-    const text = `✅ Записано: ${sign}${money} · ${pending.description}`;
-
-    if (edit) {
-      await ctx.editMessageText(text);
-    } else {
-      await ctx.reply(text);
+  private async routeDraftCallback(ctx: MyContext, draft: Draft, data: string): Promise<void> {
+    // Подменю: меняем только клавиатуру, текст карточки оставляем.
+    if (data === 'draft:acc') {
+      const accounts = await this.activeAccounts(draft.userId);
+      await ctx.editMessageReplyMarkup({ reply_markup: accountKeyboard(accounts) });
+      return void ctx.answerCallbackQuery();
     }
+    if (data === 'draft:cat') {
+      const categories = await this.categoriesOfType(draft.userId, draft.type);
+      await ctx.editMessageReplyMarkup({ reply_markup: categoryKeyboard(categories) });
+      return void ctx.answerCallbackQuery();
+    }
+    if (data === 'draft:date') {
+      await ctx.editMessageReplyMarkup({ reply_markup: dateKeyboard() });
+      return void ctx.answerCallbackQuery();
+    }
+    if (data === 'draft:back') {
+      await ctx.editMessageReplyMarkup({ reply_markup: mainKeyboard(draft) });
+      return void ctx.answerCallbackQuery();
+    }
+
+    // Действия, требующие текстового ввода.
+    if (data === 'draft:edit:amount') {
+      ctx.session.editing = 'amount';
+      await ctx.reply('Введите сумму числом:');
+      return void ctx.answerCallbackQuery();
+    }
+    if (data === 'draft:edit:desc') {
+      ctx.session.editing = 'desc';
+      await ctx.reply('Введите описание:');
+      return void ctx.answerCallbackQuery();
+    }
+    if (data === 'draft:newcat') {
+      ctx.session.editing = 'newcat';
+      await ctx.reply('Введите название категории:');
+      return void ctx.answerCallbackQuery();
+    }
+    if (data === 'draft:setdate:custom') {
+      ctx.session.editing = 'datecustom';
+      await ctx.reply('Введите дату в формате дд.мм.гггг:');
+      return void ctx.answerCallbackQuery();
+    }
+
+    // Мгновенные изменения значений → перерисовываем карточку целиком.
+    if (data === 'draft:type') {
+      draft.type = draft.type === 'expense' ? 'income' : 'expense';
+    } else if (data.startsWith('draft:setacc:')) {
+      draft.accountId = data.slice('draft:setacc:'.length);
+    } else if (data.startsWith('draft:setcat:')) {
+      const id = data.slice('draft:setcat:'.length);
+      const cat = (await this.categoriesOfType(draft.userId, draft.type)).find((c) => c.id === id);
+      if (cat) {
+        draft.categoryName = cat.name;
+        draft.categoryIcon = cat.icon;
+      }
+    } else if (data.startsWith('draft:setdate:')) {
+      draft.date = this.relativeDate(data.slice('draft:setdate:'.length));
+    } else if (data === 'draft:cancel') {
+      ctx.session.draft = undefined;
+      ctx.session.editing = null;
+      await ctx.editMessageText('❌ Черновик отменён.');
+      return void ctx.answerCallbackQuery();
+    } else if (data === 'draft:save') {
+      return await this.commitDraft(ctx, draft);
+    } else {
+      return void ctx.answerCallbackQuery();
+    }
+
+    await this.refreshCard(ctx, draft, true);
+    await ctx.answerCallbackQuery();
+  }
+
+  /** Сохраняет черновик как транзакцию, заменяет карточку подтверждением с кнопкой отмены. */
+  private async commitDraft(ctx: MyContext, draft: Draft): Promise<void> {
+    if (!draft.accountId) {
+      return void ctx.answerCallbackQuery({ text: 'Сначала выберите счёт.' });
+    }
+
+    const categoryType = draft.type as CategoryType;
+    const categories = await this.categoriesService.findAll(draft.userId);
+    let category = categories.find(
+      (c) => c.type === categoryType && c.name.toLowerCase() === draft.categoryName.toLowerCase(),
+    );
+    if (!category) {
+      category = await this.categoriesService.create(draft.userId, {
+        name: draft.categoryName,
+        icon: draft.categoryIcon || NEW_CATEGORY_ICON,
+        color: NEW_CATEGORY_COLOR,
+        type: categoryType,
+      });
+    }
+
+    try {
+      const tx = await this.transactionsService.create(draft.userId, draft.baseCurrency, {
+        type: draft.type,
+        amount: draft.amount,
+        categoryId: category.id,
+        accountId: draft.accountId,
+        description: draft.description || category.name,
+        date: new Date(draft.date),
+      });
+
+      ctx.session.draft = undefined;
+      ctx.session.editing = null;
+
+      const sign = tx.type === 'expense' ? '−' : '+';
+      const money = formatMoney(Number(tx.amount), tx.currency as Currency);
+      const text = `✅ Записано: ${sign}${money} · ${draft.description || category.name} · ${formatDateLabel(draft.date)}`;
+      const kb = new InlineKeyboard().text('↩️ Отменить', `undo:${tx.id}`);
+      await ctx.editMessageText(text, { reply_markup: kb });
+      await ctx.answerCallbackQuery({ text: 'Сохранено' });
+    } catch (error) {
+      // Напр. «Недостаточно средств на счете» — оставляем черновик, чтобы поправить.
+      await ctx.answerCallbackQuery({ text: (error as Error).message.slice(0, 190) });
+    }
+  }
+
+  // ─────────────────────────── Отмена операции ───────────────────────────
+
+  private async handleUndoCallback(ctx: MyContext, txId: string): Promise<void> {
+    const from = ctx.from;
+    if (!from) return;
+    const user = await this.usersService.findOrCreateByTelegram({
+      id: from.id,
+      first_name: from.first_name,
+      last_name: from.last_name,
+      username: from.username,
+      language_code: from.language_code,
+    });
+    try {
+      await this.transactionsService.remove(user.id, txId);
+      await ctx.editMessageText('↩️ Операция отменена.');
+      await ctx.answerCallbackQuery({ text: 'Отменено' });
+    } catch {
+      await ctx.answerCallbackQuery({ text: 'Не удалось отменить (возможно, уже удалена).' });
+    }
+  }
+
+  private async handleUndoCommand(ctx: MyContext): Promise<void> {
+    const from = ctx.from;
+    if (!from) return;
+    const user = await this.usersService.findOrCreateByTelegram({
+      id: from.id,
+      first_name: from.first_name,
+      last_name: from.last_name,
+      username: from.username,
+      language_code: from.language_code,
+    });
+    const last = await this.transactionsService.findLast(user.id);
+    if (!last) {
+      await ctx.reply('Нет операций для отмены.');
+      return;
+    }
+    const sign = last.type === 'expense' ? '−' : '+';
+    const money = formatMoney(Number(last.amount), last.currency as Currency);
+    const kb = new InlineKeyboard()
+      .text('↩️ Отменить', `undo:${last.id}`)
+      .text('Нет', 'dismiss');
+    await ctx.reply(`Последняя операция:\n${sign}${money} · ${last.description}\n\nОтменить её?`, {
+      reply_markup: kb,
+    });
+  }
+
+  // ─────────────────────────── Вспомогательное ───────────────────────────
+
+  /** Перерисовывает сообщение-карточку (правит существующее, при сбое шлёт новое). */
+  private async refreshCard(ctx: MyContext, draft: Draft, fromCallback = false): Promise<void> {
+    draft.updatedAt = Date.now();
+    const account = draft.accountId
+      ? await this.accountsService.findOne(draft.userId, draft.accountId).catch(() => undefined)
+      : undefined;
+    const text = renderDraftText(draft, account as AccountLite | undefined);
+    const opts = { parse_mode: 'HTML' as const, reply_markup: mainKeyboard(draft) };
+
+    if (fromCallback) {
+      await ctx.editMessageText(text, opts);
+      return;
+    }
+    // Правка пришла отдельным сообщением — редактируем карточку по сохранённому id.
+    const chatId = ctx.chat?.id;
+    if (chatId && draft.cardMessageId) {
+      try {
+        await ctx.api.editMessageText(chatId, draft.cardMessageId, text, opts);
+        return;
+      } catch {
+        /* карточку нельзя отредактировать (стара/удалена) — пошлём новую ниже */
+      }
+    }
+    const sent = await ctx.reply(text, opts);
+    draft.cardMessageId = sent.message_id;
+  }
+
+  private async activeAccounts(userId: string): Promise<AccountLite[]> {
+    const all = await this.accountsService.findAll(userId);
+    return all.filter((a) => !a.isArchived);
+  }
+
+  private async categoriesOfType(
+    userId: string,
+    type: Draft['type'],
+  ): Promise<{ id: string; name: string; icon: string }[]> {
+    const all = await this.categoriesService.findAll(userId);
+    return all.filter((c) => c.type === (type as CategoryType));
+  }
+
+  /** Дата из парсера: валидный YYYY-MM-DD → полдень того дня; иначе сейчас. */
+  private resolveParsedDate(dateStr?: string): string {
+    if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const d = new Date(`${dateStr}T12:00:00`);
+      if (!Number.isNaN(d.getTime())) return d.toISOString();
+    }
+    return new Date().toISOString();
+  }
+
+  /** today/yesterday/dbefore → ISO (сохраняем текущее время суток). */
+  private relativeDate(kind: string): string {
+    const d = new Date();
+    if (kind === 'yesterday') d.setDate(d.getDate() - 1);
+    else if (kind === 'dbefore') d.setDate(d.getDate() - 2);
+    return d.toISOString();
+  }
+
+  /** Ручной ввод даты: дд.мм.гггг или дд.мм → ISO (полдень); null при ошибке. */
+  private parseManualDate(text: string): string | null {
+    const m = text.trim().match(/^(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?$/);
+    if (!m) return null;
+    const day = Number(m[1]);
+    const mon = Number(m[2]) - 1;
+    let year = m[3] ? Number(m[3]) : new Date().getFullYear();
+    if (year < 100) year += 2000;
+    const d = new Date(year, mon, day, 12, 0, 0);
+    if (Number.isNaN(d.getTime()) || d.getMonth() !== mon || d.getDate() !== day) return null;
+    return d.toISOString();
   }
 }

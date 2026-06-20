@@ -187,6 +187,15 @@ export class TransactionsService {
     });
   }
 
+  /** Последняя созданная операция пользователя (по createdAt) — для «отменить последнюю» в боте. */
+  async findLast(userId: string): Promise<Transaction | null> {
+    return await this.transactionsRepository.findOne({
+      where: { userId },
+      relations: ['category', 'account'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async findOne(userId: string, id: string): Promise<Transaction> {
     const transaction = await this.transactionsRepository.findOne({
       where: { id, userId },

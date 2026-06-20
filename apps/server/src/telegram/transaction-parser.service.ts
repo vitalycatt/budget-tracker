@@ -13,6 +13,10 @@ export const parsedTransactionSchema = z.object({
     .string()
     .describe('Краткое название категории на русском (например: Еда, Транспорт, Зарплата)'),
   description: z.string().describe('Короткое описание операции на русском'),
+  date: z
+    .string()
+    .optional()
+    .describe('Дата операции в формате YYYY-MM-DD, если в тексте указана («вчера», «15 мая» и т.п.); иначе опусти'),
 });
 
 export type ParsedTransaction = z.infer<typeof parsedTransactionSchema>;
@@ -28,6 +32,7 @@ const OUTPUT_JSON_SCHEMA = {
     amount: { type: 'number' },
     categoryName: { type: 'string' },
     description: { type: 'string' },
+    date: { type: 'string' },
   },
   required: ['isTransaction', 'type', 'amount', 'categoryName', 'description'],
   additionalProperties: false,
@@ -66,10 +71,12 @@ export class TransactionParserService {
       ? `Существующие категории пользователя (переиспользуй подходящую, не выдумывай новую без необходимости): ${existingCategories.join(', ')}.`
       : 'У пользователя пока нет категорий — предложи подходящее короткое название.';
 
+    const today = new Date().toISOString().slice(0, 10);
     const system = [
       'Ты — помощник учёта личных финансов. Пользователь пишет короткие фразы о тратах и доходах на русском.',
       'Извлеки из фразы: тип (доход income / расход expense), сумму (число), категорию и краткое описание.',
       'Примеры: «потратил 500 на кофе» → expense, 500, Еда, кофе. «зарплата 120000» → income, 120000, Зарплата, зарплата.',
+      `Сегодня ${today}. Если в тексте есть дата или относительное указание («вчера», «позавчера», «15 мая») — верни поле date в формате YYYY-MM-DD; иначе опусти его (будет сегодня).`,
       'Если фраза не описывает финансовую операцию — верни isTransaction=false и нули/пустые строки.',
       categoriesHint,
     ].join(' ');
