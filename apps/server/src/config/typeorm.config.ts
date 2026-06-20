@@ -5,10 +5,11 @@ import { Category } from '../categories/entities/category.entity';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import { User } from '../users/entities/user.entity';
 import { ExchangeRate } from '../exchange-rates/entities/exchange-rate.entity';
+import { Transfer } from '../transfers/entities/transfer.entity';
 
 config();
 
-const entities = [User, Category, Account, Transaction, ExchangeRate];
+const entities = [User, Category, Account, Transaction, ExchangeRate, Transfer];
 
 const dbConnection = process.env.DATABASE_URL
   ? { url: process.env.DATABASE_URL }
