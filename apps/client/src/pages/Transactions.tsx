@@ -9,15 +9,15 @@ import { Card } from '@/components/ui/card';
 import AddTransactionDialog from '@/components/AddTransactionDialog';
 import EditTransactionDialog from '@/components/EditTransactionDialog';
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
-  YAxis,
-  CartesianGrid,
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
 import {
+  startOfDay,
+  endOfDay,
   startOfWeek,
   endOfWeek,
   startOfMonth,
@@ -29,6 +29,7 @@ import {
   eachMonthOfInterval,
   format,
   isWithinInterval,
+  getHours,
   type Interval,
 } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -43,13 +44,34 @@ interface TransactionsProps {
   type: TransactionType;
 }
 
+type Period = 'day' | 'week' | 'month' | 'year';
+
+const PERIOD_LABEL: Record<Period, string> = {
+  day: 'за сегодня',
+  week: 'за неделю',
+  month: 'за месяц',
+  year: 'за год',
+};
+
+/** Границы выбранного периода относительно текущего момента. */
+function getRange(period: Period, now: Date): Interval {
+  switch (period) {
+    case 'day':
+      return { start: startOfDay(now), end: endOfDay(now) };
+    case 'week':
+      return { start: startOfWeek(now, { locale: ru }), end: endOfWeek(now, { locale: ru }) };
+    case 'month':
+      return { start: startOfMonth(now), end: endOfMonth(now) };
+    case 'year':
+      return { start: startOfYear(now), end: endOfYear(now) };
+  }
+}
+
 export default function Transactions({ type }: TransactionsProps) {
-  const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month');
+  const [period, setPeriod] = useState<Period>('day');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
   const [amountMin, setAmountMin] = useState('');
   const [amountMax, setAmountMax] = useState('');
   const { data: transactions = [], isLoading } = useTransactions(type);
@@ -62,186 +84,199 @@ export default function Transactions({ type }: TransactionsProps) {
   const title = isIncome ? 'Доходы' : 'Расходы';
   const sign = isIncome ? '+' : '−';
   const amountClass = isIncome ? 'text-accent' : 'text-foreground';
+  const accentColor = isIncome ? 'hsl(var(--accent))' : 'hsl(var(--foreground))';
 
-  const getCategoryName = (id: string) =>
-    categories.find((c) => c.id === id)?.name || 'Без категории';
+  const getCategory = (id: string) => categories.find((c) => c.id === id);
+  const getCategoryName = (id: string) => getCategory(id)?.name || 'Без категории';
   const getAccountName = (id: string) =>
     accounts.find((a) => a.id === id)?.name || 'Без счета';
 
-  // Агрегаты считаем в базовой валюте (amountInBase) — транзакции бывают в разных валютах
-  const categoryStats = transactions.reduce((acc, t) => {
-    const name = getCategoryName(t.categoryId);
-    acc[name] = (acc[name] || 0) + Number(t.amountInBase ?? t.amount);
-    return acc;
-  }, {} as Record<string, number>);
+  // Все агрегаты страницы (итог, категории, история, график) — за выбранный период.
+  const range = useMemo(() => getRange(period, new Date()), [period]);
 
-  const totalAmount = transactions.reduce(
+  const periodTx = useMemo(
+    () => transactions.filter((t) => isWithinInterval(new Date(t.date), range)),
+    [transactions, range]
+  );
+
+  // Агрегаты считаем в базовой валюте (amountInBase) — транзакции бывают в разных валютах
+  const totalAmount = periodTx.reduce(
     (sum, t) => sum + Number(t.amountInBase ?? t.amount),
     0
   );
 
+  const categoryStats = useMemo(() => {
+    const map = periodTx.reduce((acc, t) => {
+      const name = getCategoryName(t.categoryId);
+      acc[name] = (acc[name] || 0) + Number(t.amountInBase ?? t.amount);
+      return acc;
+    }, {} as Record<string, number>);
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodTx, categories]);
+
   const chartData = useMemo(() => {
     const now = new Date();
-    let intervals: Date[] = [];
-    let dateRange: Interval;
-
-    if (period === 'week') {
-      dateRange = { start: startOfWeek(now, { locale: ru }), end: endOfWeek(now, { locale: ru }) };
-      intervals = eachDayOfInterval(dateRange);
-    } else if (period === 'month') {
-      dateRange = { start: startOfMonth(now), end: endOfMonth(now) };
-      intervals = eachWeekOfInterval(dateRange);
-    } else {
-      dateRange = { start: startOfYear(now), end: endOfYear(now) };
-      intervals = eachMonthOfInterval(dateRange);
-    }
-
-    return intervals.map((date) => {
-      let rangeStart: Date;
-      let rangeEnd: Date;
-      let label: string;
-
-      if (period === 'week') {
-        rangeStart = date;
-        rangeEnd = date;
-        label = format(date, 'EEE', { locale: ru });
-      } else if (period === 'month') {
-        rangeStart = date;
-        rangeEnd = endOfWeek(date, { locale: ru });
-        label = format(date, 'd MMM', { locale: ru });
-      } else {
-        rangeStart = date;
-        rangeEnd = endOfMonth(date);
-        label = format(date, 'LLL', { locale: ru });
-      }
-
-      const amount = transactions
-        .filter((t) => isWithinInterval(new Date(t.date), { start: rangeStart, end: rangeEnd }))
+    const sumIn = (start: Date, end: Date) =>
+      periodTx
+        .filter((t) => isWithinInterval(new Date(t.date), { start, end }))
         .reduce((sum, t) => sum + Number(t.amountInBase ?? t.amount), 0);
 
-      return { label, amount };
-    });
-  }, [period, transactions]);
+    if (period === 'day') {
+      // День разбиваем на 6 блоков по 4 часа — компактно и наглядно на телефоне.
+      return Array.from({ length: 6 }, (_, i) => {
+        const from = i * 4;
+        const to = from + 4;
+        const amount = periodTx
+          .filter((t) => {
+            const h = getHours(new Date(t.date));
+            return h >= from && h < to;
+          })
+          .reduce((sum, t) => sum + Number(t.amountInBase ?? t.amount), 0);
+        return { label: `${String(from).padStart(2, '0')}:00`, amount };
+      });
+    }
 
-  // Фильтры применяются к списку «История» (по дате и сумме операции)
+    let intervals: Date[];
+    if (period === 'week') {
+      intervals = eachDayOfInterval(range);
+      return intervals.map((date) => ({
+        label: format(date, 'EEEEEE', { locale: ru }),
+        amount: sumIn(startOfDay(date), endOfDay(date)),
+      }));
+    }
+    if (period === 'month') {
+      intervals = eachWeekOfInterval(range, { locale: ru });
+      return intervals.map((date) => ({
+        label: format(date, 'd MMM', { locale: ru }),
+        amount: sumIn(date, endOfWeek(date, { locale: ru })),
+      }));
+    }
+    intervals = eachMonthOfInterval(range);
+    return intervals.map((date) => ({
+      label: format(date, 'LLL', { locale: ru }),
+      amount: sumIn(date, endOfMonth(date)),
+    }));
+  }, [period, range, periodTx]);
+
+  // Доп. фильтр истории по сумме операции (период уже задаёт диапазон дат).
   const filteredHistory = useMemo(() => {
-    const from = dateFrom ? new Date(dateFrom) : null;
-    const to = dateTo ? new Date(dateTo) : null;
-    if (to) to.setHours(23, 59, 59, 999);
     const min = amountMin ? parseFloat(amountMin) : null;
     const max = amountMax ? parseFloat(amountMax) : null;
+    return periodTx
+      .filter((t) => {
+        const amt = Number(t.amount);
+        if (min !== null && amt < min) return false;
+        if (max !== null && amt > max) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [periodTx, amountMin, amountMax]);
 
-    return transactions.filter((t) => {
-      const d = new Date(t.date);
-      if (from && d < from) return false;
-      if (to && d > to) return false;
-      const amt = Number(t.amount);
-      if (min !== null && amt < min) return false;
-      if (max !== null && amt > max) return false;
-      return true;
-    });
-  }, [transactions, dateFrom, dateTo, amountMin, amountMax]);
-
-  const hasActiveFilters = !!(dateFrom || dateTo || amountMin || amountMax);
+  const hasActiveFilters = !!(amountMin || amountMax);
 
   const resetFilters = () => {
-    setDateFrom('');
-    setDateTo('');
     setAmountMin('');
     setAmountMax('');
   };
 
   return (
-    <div className="min-h-screen p-6">
-      <div className="mb-8">
-        <h1 className="text-4xl font-black mb-2">{title}</h1>
-        <p className="text-muted-foreground font-semibold">
+    <div className="space-y-5 pb-4">
+      {/* Шапка */}
+      <div className="pt-1">
+        <h1 className="text-2xl font-black">{title}</h1>
+        <p className="text-sm text-muted-foreground font-semibold">
           {isIncome ? 'Сколько заработал' : 'Сколько потратил'}
         </p>
       </div>
 
-      {/* Итог */}
-      <div className="mb-6">
-        <div className="text-sm text-muted-foreground font-semibold mb-2">
-          {isIncome ? 'Всего доходов' : 'Всего расходов'}
+      {/* Переключатель периода — управляет всей страницей */}
+      <Tabs value={period} onValueChange={(v) => setPeriod(v as Period)}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="day" className="text-sm font-bold">День</TabsTrigger>
+          <TabsTrigger value="week" className="text-sm font-bold">Неделя</TabsTrigger>
+          <TabsTrigger value="month" className="text-sm font-bold">Месяц</TabsTrigger>
+          <TabsTrigger value="year" className="text-sm font-bold">Год</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Hero: итог за период + тренд */}
+      <Card className="p-5 overflow-hidden">
+        <div className="text-sm text-muted-foreground font-semibold mb-1">
+          {(isIncome ? 'Доходы ' : 'Расходы ') + PERIOD_LABEL[period]}
         </div>
-        <div className={`text-5xl font-black ${isIncome ? 'text-accent' : ''}`}>
+        <div className={`text-4xl font-black mb-4 ${isIncome ? 'text-accent' : ''}`}>
           {formatMoney(totalAmount, baseCurrency)}
         </div>
-      </div>
-
-      {/* График */}
-      <Card className="p-6 mb-6">
-        <div className="text-sm font-bold mb-4 text-muted-foreground">
-          {isIncome ? 'График доходов' : 'График расходов'}
+        <div className="-mx-5 -mb-5">
+          <ResponsiveContainer width="100%" height={120}>
+            <AreaChart data={chartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id={`fill-${type}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={accentColor} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={accentColor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="label"
+                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                interval="preserveStartEnd"
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'hsl(var(--background))',
+                  border: '1px solid hsl(var(--border))',
+                  borderRadius: '12px',
+                  fontWeight: 'bold',
+                }}
+                labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
+                formatter={(value: number) => [formatMoney(value, baseCurrency), '']}
+              />
+              <Area
+                type="monotone"
+                dataKey="amount"
+                stroke={accentColor}
+                strokeWidth={3}
+                fill={`url(#fill-${type})`}
+                dot={false}
+                activeDot={{ r: 4 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
-        <div className="mb-4">
-          <Tabs value={period} onValueChange={(v) => setPeriod(v as 'week' | 'month' | 'year')}>
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="week" className="text-sm font-bold">
-                Неделя
-              </TabsTrigger>
-              <TabsTrigger value="month" className="text-sm font-bold">
-                Месяц
-              </TabsTrigger>
-              <TabsTrigger value="year" className="text-sm font-bold">
-                Год
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            <XAxis
-              dataKey="label"
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-              stroke="hsl(var(--border))"
-            />
-            <YAxis
-              tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-              stroke="hsl(var(--border))"
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'hsl(var(--background))',
-                border: '1px solid hsl(var(--border))',
-                borderRadius: '8px',
-                fontWeight: 'bold',
-              }}
-              formatter={(value: number) => formatMoney(value, baseCurrency)}
-            />
-            <Line
-              type="monotone"
-              dataKey="amount"
-              stroke={isIncome ? 'hsl(var(--accent))' : 'hsl(var(--foreground))'}
-              strokeWidth={3}
-              dot={{ fill: isIncome ? 'hsl(var(--accent))' : 'hsl(var(--foreground))', r: 4 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
       </Card>
 
-      {/* Разбивка по категориям */}
-      {Object.keys(categoryStats).length > 0 && (
-        <Card className="p-6 mb-6">
-          <div className="text-sm font-bold mb-3 text-muted-foreground">По категориям:</div>
+      {/* Разбивка по категориям за период */}
+      {categoryStats.length > 0 && (
+        <Card className="p-5">
+          <div className="text-sm font-bold mb-3 text-muted-foreground">По категориям</div>
           <div className="space-y-3">
-            {Object.entries(categoryStats)
-              .sort((a, b) => b[1] - a[1])
-              .map(([category, amount]) => (
-                <div key={category} className="flex justify-between items-center">
-                  <span className="font-semibold">{category}</span>
-                  <span className="font-bold">{formatMoney(amount, baseCurrency)}</span>
+            {categoryStats.map(([category, amount]) => {
+              const share = totalAmount > 0 ? (amount / totalAmount) * 100 : 0;
+              return (
+                <div key={category}>
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="font-semibold">{category}</span>
+                    <span className="font-bold">{formatMoney(amount, baseCurrency)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-accent"
+                      style={{ width: `${Math.max(share, 2)}%` }}
+                    />
+                  </div>
                 </div>
-              ))}
+              );
+            })}
           </div>
         </Card>
       )}
 
-      {/* История + фильтры */}
+      {/* История + фильтр по сумме */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center justify-between">
           <div className="text-lg font-black">История</div>
           <Button
             variant="ghost"
@@ -250,21 +285,13 @@ export default function Transactions({ type }: TransactionsProps) {
             onClick={() => setShowFilters((v) => !v)}
           >
             <SlidersHorizontal className="w-4 h-4 mr-1" />
-            Фильтры
+            Фильтр
           </Button>
         </div>
 
         {showFilters && (
           <Card className="p-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-muted-foreground">Дата с</Label>
-                <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-muted-foreground">Дата по</Label>
-                <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-              </div>
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-muted-foreground">Сумма от</Label>
                 <Input
@@ -288,7 +315,7 @@ export default function Transactions({ type }: TransactionsProps) {
             </div>
             {hasActiveFilters && (
               <Button variant="outline" size="sm" className="w-full font-bold" onClick={resetFilters}>
-                Сбросить фильтры
+                Сбросить
               </Button>
             )}
           </Card>
@@ -301,45 +328,50 @@ export default function Transactions({ type }: TransactionsProps) {
         ) : filteredHistory.length === 0 ? (
           <Card className="p-6 text-center">
             <p className="text-muted-foreground font-semibold">
-              {transactions.length === 0
-                ? isIncome
-                  ? 'Нет доходов'
-                  : 'Нет расходов'
-                : 'Ничего не найдено по фильтрам'}
+              {periodTx.length === 0
+                ? `Нет операций ${PERIOD_LABEL[period]}`
+                : 'Ничего не найдено по фильтру'}
             </p>
           </Card>
         ) : (
-          filteredHistory.map((transaction) => (
-            <Card
-              key={transaction.id}
-              className="p-4 cursor-pointer hover:bg-accent/10 transition-colors"
-              onClick={() => setEditTx(transaction)}
-            >
-              <div className="flex justify-between items-start">
-                <div>
-                  <div className="font-bold text-lg mb-1">{transaction.description}</div>
-                  <div className="text-sm text-muted-foreground font-semibold">
-                    {getCategoryName(transaction.categoryId)} • {getAccountName(transaction.accountId)}
+          filteredHistory.map((transaction) => {
+            const cat = getCategory(transaction.categoryId);
+            return (
+              <Card
+                key={transaction.id}
+                className="p-4 cursor-pointer hover:bg-accent/10 active:scale-[0.99] transition-all"
+                onClick={() => setEditTx(transaction)}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-xl"
+                    style={{ backgroundColor: (cat?.color ?? '#999') + '20' }}
+                  >
+                    {cat?.icon ?? '🏷️'}
                   </div>
-                  <div className="text-xs text-muted-foreground font-semibold mt-1">
-                    {new Date(transaction.date).toLocaleDateString('ru-RU')}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold truncate">{transaction.description}</div>
+                    <div className="text-xs text-muted-foreground font-semibold truncate">
+                      {getAccountName(transaction.accountId)} ·{' '}
+                      {new Date(transaction.date).toLocaleDateString('ru-RU')}
+                    </div>
+                  </div>
+                  <div className={`text-lg font-black shrink-0 ${amountClass}`}>
+                    {sign}
+                    {formatMoney(Number(transaction.amount), transaction.currency)}
                   </div>
                 </div>
-                <div className={`text-xl font-black ${amountClass}`}>
-                  {sign}
-                  {formatMoney(Number(transaction.amount), transaction.currency)}
-                </div>
-              </div>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </div>
 
-      {/* Кнопка добавления */}
+      {/* FAB добавления */}
       <Button
         size="lg"
-        className="fixed bottom-24 h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90 text-foreground"
-        style={{ right: 'calc(1.5rem + env(safe-area-inset-right))' }}
+        className="fixed bottom-24 h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90 text-foreground z-40"
+        style={{ right: 'calc(1rem + env(safe-area-inset-right))' }}
         onClick={() => setDialogOpen(true)}
       >
         <Plus className="h-8 w-8" />

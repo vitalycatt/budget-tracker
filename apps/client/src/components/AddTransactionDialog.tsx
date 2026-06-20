@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,13 +8,19 @@ import type { TransactionType, Account, Category } from "@/stores/financeStore";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCategories, useCreateCategory } from "@/hooks/use-categories";
 import { useCreateTransaction } from "@/hooks/use-transactions";
-import { formatMoney } from "@swt/shared";
+import { formatMoney, CURRENCY_META } from "@swt/shared";
 import {
   Dialog,
   DialogTitle,
   DialogHeader,
   DialogContent,
 } from "@/components/ui/dialog";
+
+/** Шаги ввода: сначала счёт (он задаёт валюту), потом сумма, потом категория. */
+type Step = "account" | "amount" | "category";
+
+const accountEmoji = (type: Account["type"]) =>
+  type === "bank" ? "🏦" : type === "card" ? "💳" : "💵";
 
 interface AddTransactionDialogProps {
   open: boolean;
@@ -30,7 +36,7 @@ export default function AddTransactionDialog({
   onOpenChange,
   type,
 }: AddTransactionDialogProps) {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<Step>("account");
   const [amount, setAmount] = useState("");
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   // Создание категории на лету
@@ -53,7 +59,7 @@ export default function AddTransactionDialog({
   }, [open]);
 
   const resetDialog = () => {
-    setStep(1);
+    setStep("account");
     setAmount("");
     setSelectedAccount(null);
     setCreatingCategory(false);
@@ -70,16 +76,21 @@ export default function AddTransactionDialog({
 
   const handleDelete = () => setAmount(amount.slice(0, -1));
 
+  const handleAccountSelect = (account: Account) => {
+    setSelectedAccount(account);
+    setStep("amount");
+  };
+
   const handleOk = () => {
     if (amount && parseFloat(amount) > 0) {
-      setStep(2);
+      setStep("category");
     }
   };
 
-  const handleAccountSelect = (account: Account) => {
-    setSelectedAccount(account);
-    setStep(3);
-  };
+  // Символ валюты выбранного счёта — показываем рядом с суммой при вводе.
+  const currencySymbol = selectedAccount
+    ? CURRENCY_META[selectedAccount.currency]?.symbol ?? selectedAccount.currency
+    : "";
 
   const submitTransaction = (category: Category) => {
     if (!selectedAccount || !amount) {
@@ -126,14 +137,79 @@ export default function AddTransactionDialog({
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="max-w-sm">
-        {step === 1 && (
+        {/* Шаг 1 — счёт (задаёт валюту операции) */}
+        {step === "account" && (
           <>
             <DialogHeader>
               <DialogTitle className="text-2xl font-black">{title}</DialogTitle>
             </DialogHeader>
+            <p className="text-sm text-muted-foreground font-semibold -mt-2">
+              Выберите счёт — от него зависит валюта операции
+            </p>
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+              {accounts.length === 0 ? (
+                <Card className="p-4 text-center">
+                  <div className="text-muted-foreground font-semibold">
+                    Сначала создайте счёт на вкладке «Счета»
+                  </div>
+                </Card>
+              ) : (
+                accounts.map((account) => (
+                  <Card
+                    key={account.id}
+                    className="p-4 cursor-pointer hover:bg-accent/10 transition-colors"
+                    onClick={() => handleAccountSelect(account)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-xl"
+                        style={{ backgroundColor: account.color + "20" }}
+                      >
+                        {accountEmoji(account.type)}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-bold">{account.name}</div>
+                        <div className="text-sm text-muted-foreground font-semibold">
+                          {formatMoney(Number(account.balance), account.currency)}
+                        </div>
+                      </div>
+                      <div className="text-sm font-bold text-muted-foreground">
+                        {account.currency}
+                      </div>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Шаг 2 — сумма в валюте выбранного счёта */}
+        {step === "amount" && selectedAccount && (
+          <>
+            <DialogHeader>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setStep("account")}
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </Button>
+                <DialogTitle className="text-2xl font-black">{title}</DialogTitle>
+              </div>
+            </DialogHeader>
             <div className="space-y-6">
-              <div className="text-center py-8">
-                <div className="text-5xl font-black mb-2">{amount || "0"}</div>
+              <div className="text-center py-6">
+                <div className="text-5xl font-black mb-2">
+                  {amount || "0"}{" "}
+                  <span className="text-3xl text-muted-foreground">{currencySymbol}</span>
+                </div>
+                <div className="text-sm text-muted-foreground font-semibold">
+                  {accountEmoji(selectedAccount.type)} {selectedAccount.name} ·{" "}
+                  {selectedAccount.currency}
+                </div>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -162,52 +238,20 @@ export default function AddTransactionDialog({
           </>
         )}
 
-        {step === 2 && (
+        {step === "category" && !creatingCategory && (
           <>
             <DialogHeader>
-              <DialogTitle className="text-2xl font-black">Выберите счет</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-              {accounts.length === 0 ? (
-                <Card className="p-4 text-center">
-                  <div className="text-muted-foreground font-semibold">
-                    Сначала создайте счёт на вкладке «Счета»
-                  </div>
-                </Card>
-              ) : (
-                accounts.map((account) => (
-                  <Card
-                    key={account.id}
-                    className="p-4 cursor-pointer hover:bg-accent/10 transition-colors"
-                    onClick={() => handleAccountSelect(account)}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-xl"
-                        style={{ backgroundColor: account.color + "20" }}
-                      >
-                        {account.type === "bank" && "🏦"}
-                        {account.type === "card" && "💳"}
-                        {account.type === "cash" && "💵"}
-                      </div>
-                      <div>
-                        <div className="font-bold">{account.name}</div>
-                        <div className="text-sm text-muted-foreground font-semibold">
-                          {formatMoney(Number(account.balance), account.currency)}
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                ))
-              )}
-            </div>
-          </>
-        )}
-
-        {step === 3 && !creatingCategory && (
-          <>
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black">Выберите категорию</DialogTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setStep("amount")}
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </Button>
+                <DialogTitle className="text-2xl font-black">Выберите категорию</DialogTitle>
+              </div>
             </DialogHeader>
             <div className="space-y-3 max-h-[60vh] overflow-y-auto">
               <Card
@@ -243,7 +287,7 @@ export default function AddTransactionDialog({
           </>
         )}
 
-        {step === 3 && creatingCategory && (
+        {step === "category" && creatingCategory && (
           <>
             <DialogHeader>
               <DialogTitle className="text-2xl font-black">Новая категория</DialogTitle>
