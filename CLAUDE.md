@@ -184,7 +184,8 @@
 - PostgreSQL + TypeORM 0.3 (БД `smart_wallet_tracker`, `synchronize` в dev)
 - Валидация: **Zod** через кастомный `ZodValidationPipe` + декоратор `@ZodValidation` (ошибки на русском)
 - Модули: `transactions`, `accounts`, `categories` (CRUD-контроллеры + сервисы)
-- Env (реально используются): `DATABASE_URL` *(или раздельные `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_DATABASE`)*, `PORT`, `NODE_ENV`, `CORS_ORIGIN`, `TELEGRAM_BOT_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`. Шаблон — `apps/server/env.example`. *(`DATABASE_URL` имеет приоритет; на Render даётся «Add from Database».)*
+- Env (реально используются): `DATABASE_URL` *(или раздельные `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_DATABASE`)*, `PORT`, `NODE_ENV`, `CORS_ORIGIN`, `TELEGRAM_BOT_TOKEN`, `LLM_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`. Шаблон — `apps/server/env.example`. *(`DATABASE_URL` имеет приоритет; на Render даётся «Add from Database».)*
+- **Парсер бота — переключаемый LLM-провайдер** (`TransactionParserService`): `LLM_PROVIDER=anthropic` (по умолчанию, Claude через SDK + structured output) или `groq` (бесплатная альтернатива, OpenAI-совместимый REST через `fetch`, JSON-режим). Ответ в обоих случаях валидируется Zod, поэтому провайдеру достаточно вернуть корректный JSON. Бот стартует только если у выбранного провайдера задан ключ.
 
 ### Frontend — `apps/client`
 - React 18 + Vite 5 + TypeScript
