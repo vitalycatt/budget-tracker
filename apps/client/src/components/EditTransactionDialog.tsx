@@ -45,6 +45,11 @@ export default function EditTransactionDialog({
   const [type, setType] = useState<TransactionType>("expense");
   const [amount, setAmount] = useState("");
   const [accountId, setAccountId] = useState("");
+
+  // Архивные счета прячем из выбора, но текущий счёт операции оставляем доступным.
+  const selectableAccounts = accounts.filter(
+    (a) => !a.isArchived || a.id === accountId,
+  );
   const [categoryId, setCategoryId] = useState("");
   const [description, setDescription] = useState("");
   const [date, setDate] = useState("");
@@ -150,9 +155,9 @@ export default function EditTransactionDialog({
                 <SelectValue placeholder="Выберите счёт" />
               </SelectTrigger>
               <SelectContent>
-                {accounts.map((a) => (
+                {selectableAccounts.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
-                    {a.name} ({a.currency})
+                    {a.name} ({a.currency}){a.isArchived ? ' · архив' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>

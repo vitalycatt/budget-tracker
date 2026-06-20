@@ -20,6 +20,7 @@ export interface Account {
   currency: Currency;
   balance: number;
   color: string;
+  isArchived?: boolean;
 }
 
 export interface Transaction {

@@ -33,7 +33,9 @@ export const createAccountSchema = z.object({
 });
 export type CreateAccountDto = z.infer<typeof createAccountSchema>;
 
-export const updateAccountSchema = createAccountSchema.partial();
+export const updateAccountSchema = createAccountSchema.partial().extend({
+  isArchived: z.boolean().optional(),
+});
 export type UpdateAccountDto = z.infer<typeof updateAccountSchema>;
 
 /* --------------------------------- Category --------------------------------- */

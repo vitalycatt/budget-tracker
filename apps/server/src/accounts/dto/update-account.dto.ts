@@ -7,6 +7,7 @@ export const updateAccountSchema = z.object({
   }).optional(),
   balance: z.number().min(0, 'Баланс не может быть отрицательным').optional(),
   color: z.string().regex(/^#[0-9A-F]{6}$/i, 'Цвет должен быть в формате HEX (#RRGGBB)').optional(),
+  isArchived: z.boolean().optional(),
 });
 
 export type UpdateAccountDto = z.infer<typeof updateAccountSchema>;
