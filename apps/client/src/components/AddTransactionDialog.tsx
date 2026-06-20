@@ -32,6 +32,19 @@ interface AddTransactionDialogProps {
 const NEW_CATEGORY_ICONS = ["🏷️", "🍔", "🚌", "🏠", "🎮", "💊", "🛍️", "💰", "🎁", "✨", "📱", "✈️"];
 const NEW_CATEGORY_COLORS = ["#F97316", "#3B82F6", "#8B5CF6", "#EC4899", "#10B981", "#F59E0B", "#22C55E", "#EF4444"];
 
+/** Дата → строка yyyy-mm-dd для <input type="date"> (в локальном времени, без сдвига по UTC). */
+const toDateInput = (d: Date) => {
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+};
+
+const todayInput = () => toDateInput(new Date());
+const yesterdayInput = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return toDateInput(d);
+};
+
 export default function AddTransactionDialog({
   open,
   onOpenChange,
@@ -46,6 +59,8 @@ export default function AddTransactionDialog({
   const [newName, setNewName] = useState("");
   const [newIcon, setNewIcon] = useState(NEW_CATEGORY_ICONS[0]);
   const [newColor, setNewColor] = useState(NEW_CATEGORY_COLORS[0]);
+  // Дата операции (yyyy-mm-dd). По умолчанию сегодня — но можно внести задним числом.
+  const [date, setDate] = useState(todayInput());
 
   const { data: allAccounts = [] } = useAccounts();
   const accounts = allAccounts.filter((a) => !a.isArchived);
@@ -69,6 +84,7 @@ export default function AddTransactionDialog({
     setNewName("");
     setNewIcon(NEW_CATEGORY_ICONS[0]);
     setNewColor(NEW_CATEGORY_COLORS[0]);
+    setDate(todayInput());
   };
 
   const handleNumberClick = (num: string) => {
@@ -106,7 +122,8 @@ export default function AddTransactionDialog({
         categoryId: category.id,
         accountId: selectedAccount.id,
         description: category.name,
-        date: new Date(),
+        // Полдень локального времени — чтобы выбранная дата не «сползла» на сутки при конвертации в UTC.
+        date: new Date(`${date}T12:00:00`),
       },
       {
         onSuccess: () => {
@@ -237,6 +254,36 @@ export default function AddTransactionDialog({
                     {key}
                   </Button>
                 ))}
+              </div>
+
+              {/* Дата операции: по умолчанию сегодня, можно внести задним числом. */}
+              <div className="space-y-2">
+                <Label className="font-bold">Дата операции</Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={date === todayInput() ? "default" : "outline"}
+                    className="flex-1 font-bold"
+                    onClick={() => setDate(todayInput())}
+                  >
+                    Сегодня
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={date === yesterdayInput() ? "default" : "outline"}
+                    className="flex-1 font-bold"
+                    onClick={() => setDate(yesterdayInput())}
+                  >
+                    Вчера
+                  </Button>
+                </div>
+                <Input
+                  type="date"
+                  value={date}
+                  max={todayInput()}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="font-semibold"
+                />
               </div>
 
               <Button
