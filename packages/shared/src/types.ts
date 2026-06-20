@@ -23,6 +23,7 @@ export interface Account {
   currency: Currency;
   balance: number;
   color: string;
+  isArchived: boolean;
   createdAt: string;
   updatedAt: string;
 }

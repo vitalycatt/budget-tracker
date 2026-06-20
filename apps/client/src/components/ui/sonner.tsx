@@ -10,6 +10,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // Сверху по центру: там нет кликабельных элементов (только нативная шапка Telegram),
+      // в отличие от низа, где нижняя навигация. Отступ — с учётом safe-area Telegram.
+      position="top-center"
+      offset="calc(var(--tg-safe-top, env(safe-area-inset-top, 0px)) + 16px)"
+      mobileOffset="calc(var(--tg-safe-top, env(safe-area-inset-top, 0px)) + 16px)"
+      duration={2500}
       toastOptions={{
         classNames: {
           toast:

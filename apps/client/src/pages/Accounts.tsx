@@ -43,6 +43,9 @@ export default function Accounts() {
   const deleteTransfer = useDeleteTransfer();
   const [transferToDelete, setTransferToDelete] = useState<Transfer | null>(null);
 
+  const activeAccounts = accounts.filter((a) => !a.isArchived);
+  const archivedAccounts = accounts.filter((a) => a.isArchived);
+
   const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? 'Счёт';
 
   const confirmDeleteTransfer = () => {
@@ -83,7 +86,7 @@ export default function Accounts() {
       )}
 
       {/* Перевод между счетами */}
-      {accounts.length >= 2 && (
+      {activeAccounts.length >= 2 && (
         <Button
           variant="outline"
           size="lg"
@@ -101,10 +104,10 @@ export default function Accounts() {
           <Card className="p-6 text-center">
             <p className="text-muted-foreground font-semibold">Загрузка...</p>
           </Card>
-        ) : accounts.length === 0 ? (
+        ) : activeAccounts.length === 0 ? (
           <Card className="p-8 text-center space-y-4">
             <p className="text-muted-foreground font-semibold">
-              Пока нет ни одного счёта.
+              Пока нет ни одного активного счёта.
               <br />
               Создайте первый, чтобы вести баланс.
             </p>
@@ -118,7 +121,7 @@ export default function Accounts() {
             </Button>
           </Card>
         ) : (
-          accounts.map((account) => (
+          activeAccounts.map((account) => (
             <Card
               key={account.id}
               className="p-4 cursor-pointer hover:bg-accent/10 active:scale-[0.99] transition-all"
@@ -148,6 +151,41 @@ export default function Accounts() {
           ))
         )}
       </div>
+
+      {/* Архивные счета */}
+      {archivedAccounts.length > 0 && (
+        <div className="space-y-3">
+          <div className="text-lg font-black text-muted-foreground">Архив</div>
+          {archivedAccounts.map((account) => (
+            <Card
+              key={account.id}
+              className="p-4 cursor-pointer opacity-60 hover:opacity-100 hover:bg-accent/10 transition-all"
+              onClick={() => handleEdit(account)}
+            >
+              <div className="flex items-center gap-4">
+                <div
+                  className="w-12 h-12 shrink-0 rounded-full flex items-center justify-center text-2xl grayscale"
+                  style={{ backgroundColor: account.color + '20' }}
+                >
+                  {accountIcons[account.type]}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-lg truncate">{account.name}</div>
+                  <div className="text-sm text-muted-foreground font-semibold">
+                    В архиве · {accountTypeLabel[account.type]}
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-xl font-black text-muted-foreground">
+                    {formatMoney(Number(account.balance), account.currency)}
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* История переводов */}
       {transfers.length > 0 && (
@@ -191,8 +229,8 @@ export default function Accounts() {
         </div>
       )}
 
-      {/* FAB добавления (когда счета уже есть) */}
-      {accounts.length > 0 && (
+      {/* FAB добавления (когда активные счета уже есть) */}
+      {activeAccounts.length > 0 && (
         <Button
           size="lg"
           className="fixed h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90 text-foreground z-50"

@@ -46,6 +46,10 @@ export class Account {
   @Column()
   color: string;
 
+  /** Архивный счёт скрыт из выбора при вводе и из общего состояния, но история операций сохраняется. */
+  @Column({ default: false })
+  isArchived: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

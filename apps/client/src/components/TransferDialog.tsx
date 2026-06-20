@@ -32,7 +32,8 @@ const accountEmoji = (type: string) =>
 const todayInput = () => new Date().toISOString().slice(0, 10);
 
 export default function TransferDialog({ open, onOpenChange }: TransferDialogProps) {
-  const { data: accounts = [] } = useAccounts();
+  const { data: allAccounts = [] } = useAccounts();
+  const accounts = allAccounts.filter((a) => !a.isArchived);
   const { data: exchange } = useExchangeRates();
   const createTransfer = useCreateTransfer();
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Plus } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Plus, Wallet } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,7 @@ export default function AddTransactionDialog({
   onOpenChange,
   type,
 }: AddTransactionDialogProps) {
+  const navigate = useNavigate();
   const [step, setStep] = useState<Step>("account");
   const [amount, setAmount] = useState("");
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -45,7 +47,8 @@ export default function AddTransactionDialog({
   const [newIcon, setNewIcon] = useState(NEW_CATEGORY_ICONS[0]);
   const [newColor, setNewColor] = useState(NEW_CATEGORY_COLORS[0]);
 
-  const { data: accounts = [] } = useAccounts();
+  const { data: allAccounts = [] } = useAccounts();
+  const accounts = allAccounts.filter((a) => !a.isArchived);
   const { data: categories = [] } = useCategories();
   const createTransaction = useCreateTransaction();
   const createCategory = useCreateCategory();
@@ -148,10 +151,20 @@ export default function AddTransactionDialog({
             </p>
             <div className="space-y-3 max-h-[60vh] overflow-y-auto">
               {accounts.length === 0 ? (
-                <Card className="p-4 text-center">
+                <Card className="p-4 text-center space-y-3">
                   <div className="text-muted-foreground font-semibold">
                     Сначала создайте счёт на вкладке «Счета»
                   </div>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      handleClose();
+                      navigate("/accounts");
+                    }}
+                  >
+                    <Wallet className="w-4 h-4 mr-2" />
+                    Перейти к счетам
+                  </Button>
                 </Card>
               ) : (
                 accounts.map((account) => (

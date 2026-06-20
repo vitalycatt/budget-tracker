@@ -85,6 +85,19 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
     }
   };
 
+  const handleToggleArchive = () => {
+    if (account) {
+      updateAccount.mutate(
+        { id: account.id, data: { isArchived: !account.isArchived } },
+        {
+          onSuccess: () => {
+            onOpenChange(false);
+          },
+        },
+      );
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
@@ -186,6 +199,16 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
           >
             {account ? 'Сохранить' : 'Создать'}
           </Button>
+          {account && (
+            <Button
+              variant="outline"
+              onClick={handleToggleArchive}
+              disabled={updateAccount.isPending}
+              className="w-full font-bold"
+            >
+              {account.isArchived ? 'Вернуть из архива' : 'Архивировать счёт'}
+            </Button>
+          )}
           {account && (
             <Button
               variant="destructive"
