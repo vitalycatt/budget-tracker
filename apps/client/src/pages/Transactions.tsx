@@ -367,11 +367,14 @@ export default function Transactions({ type }: TransactionsProps) {
         )}
       </div>
 
-      {/* FAB добавления */}
+      {/* FAB добавления — над нижней навигацией (5rem) + safe-area, поверх по z-index */}
       <Button
         size="lg"
-        className="fixed bottom-24 h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90 text-foreground z-40"
-        style={{ right: 'calc(1rem + env(safe-area-inset-right))' }}
+        className="fixed h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90 text-foreground z-50"
+        style={{
+          right: 'calc(1rem + env(safe-area-inset-right))',
+          bottom: 'calc(5rem + env(safe-area-inset-bottom) + 1rem)',
+        }}
         onClick={() => setDialogOpen(true)}
       >
         <Plus className="h-8 w-8" />

@@ -17,6 +17,15 @@ export function isTelegram(): boolean {
   return Boolean(WebApp.initData && WebApp.initData.length > 0);
 }
 
+/**
+ * Запущены ли мы в Telegram на телефоне (iOS/Android).
+ * Только здесь есть полоса нативных кнопок поверх контента, под которую кладём TopBar.
+ * Desktop/web-клиенты (tdesktop, macos, weba/webk) и обычный браузер — исключаются.
+ */
+export function isTelegramMobile(): boolean {
+  return isTelegram() && (WebApp.platform === 'ios' || WebApp.platform === 'android');
+}
+
 /** initData для авторизации на сервере (заголовок x-telegram-init-data). */
 export function getInitData(): string {
   return WebApp.initData || '';
@@ -31,10 +40,9 @@ function applyTheme(): void {
   } else {
     root.classList.remove('dark');
   }
-  // Подкрашиваем фон страницы под Telegram, если значение пришло
-  if (p.bg_color) {
-    document.body.style.backgroundColor = p.bg_color;
-  }
+  // Фон НЕ подменяем цветом Telegram (bg_color): держим единое полотно из --background,
+  // иначе body окрашивается иначе, чем контент, и появляется белый/серый разнобой.
+  void p;
 }
 
 /**
@@ -51,6 +59,10 @@ function applySafeArea(): void {
   root.style.setProperty('--tg-safe-bottom', `${(sa.bottom ?? 0) + (ca.bottom ?? 0)}px`);
   root.style.setProperty('--tg-safe-left', `${(sa.left ?? 0) + (ca.left ?? 0)}px`);
   root.style.setProperty('--tg-safe-right', `${(sa.right ?? 0) + (ca.right ?? 0)}px`);
+  // Раздельно: device safe-area (вырез) и content safe-area (полоса нативных кнопок Telegram).
+  // Нужно, чтобы расположить заголовок страницы РОВНО в полосе кнопок (между Close и ⋯).
+  root.style.setProperty('--tg-device-top', `${sa.top ?? 0}px`);
+  root.style.setProperty('--tg-header-top', `${ca.top ?? 0}px`);
 }
 
 /** Инициализация Mini App: готовность, полноэкранный режим, тема, safe-area. */
@@ -72,9 +84,6 @@ export function initTelegram(): void {
       /* метод недоступен */
     }
 
-    applyTheme();
-    applySafeArea();
-
     // Реакция на изменения темы / отступов / режима
     const onEvent = WebApp.onEvent as unknown as (event: string, cb: () => void) => void;
     onEvent('themeChanged', applyTheme);
@@ -84,4 +93,9 @@ export function initTelegram(): void {
   } catch {
     // Вне Telegram (обычный браузер) SDK может бросать — это нормально для dev.
   }
+
+  // Тему и safe-area применяем всегда, даже если SDK бросил выше:
+  // вне Telegram это даёт превью нативной шапки в браузере.
+  applyTheme();
+  applySafeArea();
 }
