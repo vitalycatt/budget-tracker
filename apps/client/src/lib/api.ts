@@ -75,6 +75,47 @@ export const accountsApi = {
   delete: (id: string) => api.delete(`/accounts/${id}`),
 };
 
+export interface Transfer {
+  id: string;
+  fromAccountId: string;
+  toAccountId: string;
+  amountFrom: number;
+  currencyFrom: Currency;
+  amountTo: number;
+  currencyTo: Currency;
+  rate: number;
+  description: string;
+  date: string;
+  fromAccount?: Account;
+  toAccount?: Account;
+}
+
+export interface CreateTransferInput {
+  fromAccountId: string;
+  toAccountId: string;
+  amountFrom: number;
+  amountTo: number;
+  description?: string;
+  date: Date;
+}
+
+export interface ExchangeRates {
+  base: string;
+  rates: Record<string, number>;
+}
+
+// Exchange rates API
+export const exchangeRatesApi = {
+  getRates: () => api.get<ExchangeRates>('/exchange-rates'),
+};
+
+// Transfers API
+export const transfersApi = {
+  getAll: () => api.get<Transfer[]>('/transfers'),
+  create: (data: CreateTransferInput) => api.post<Transfer>('/transfers', data),
+  delete: (id: string) => api.delete(`/transfers/${id}`),
+};
+
 // Transactions API
 export const transactionsApi = {
   getAll: (type?: TransactionType) => {

@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { BottomNav } from "./BottomNav";
+import { TopBar } from "./TopBar";
 
 interface LayoutProps {
   children: ReactNode;
@@ -15,6 +16,7 @@ export const Layout = ({ children }: LayoutProps) => {
       className="min-h-screen bg-background"
       style={{ paddingBottom: "calc(5rem + env(safe-area-inset-bottom) + 1rem)" }}
     >
+      <TopBar />
       <div className="max-w-screen-sm mx-auto px-4 pt-3">{children}</div>
       <BottomNav />
     </div>

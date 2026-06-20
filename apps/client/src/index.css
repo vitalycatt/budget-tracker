@@ -11,6 +11,15 @@
   padding-top: var(--tg-safe-top, env(safe-area-inset-top, 0px));
   padding-left: var(--tg-safe-left, env(safe-area-inset-left, 0px));
   padding-right: var(--tg-safe-right, env(safe-area-inset-right, 0px));
+  /* Единый фон для всего полотна, включая верхнюю safe-area полосу Telegram. */
+  background-color: hsl(var(--background));
+  min-height: 100dvh;
+}
+
+/* Фон также на html/body, чтобы overscroll-зона совпадала по цвету. */
+html,
+body {
+  background-color: hsl(var(--background));
 }
 
 /* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
@@ -19,7 +28,7 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 0 0% 98%;
+    --background: 0 0% 100%;
     --foreground: 0 0% 5%;
 
     --card: 0 0% 100%;

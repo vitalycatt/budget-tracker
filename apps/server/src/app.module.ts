@@ -8,11 +8,13 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { ExchangeRatesModule } from './exchange-rates/exchange-rates.module';
 import { TelegramModule } from './telegram/telegram.module';
+import { TransfersModule } from './transfers/transfers.module';
 import { Category } from './categories/entities/category.entity';
 import { Account } from './accounts/entities/account.entity';
 import { Transaction } from './transactions/entities/transaction.entity';
 import { User } from './users/entities/user.entity';
 import { ExchangeRate } from './exchange-rates/entities/exchange-rate.entity';
+import { Transfer } from './transfers/entities/transfer.entity';
 
 // Подключение к БД: если задан DATABASE_URL (Render «Add from Database») — берём его,
 // иначе — раздельные DB_* (локальный запуск / Docker).
@@ -34,7 +36,7 @@ const dbConnection = process.env.DATABASE_URL
     TypeOrmModule.forRoot({
       type: 'postgres',
       ...dbConnection,
-      entities: [User, Category, Account, Transaction, ExchangeRate],
+      entities: [User, Category, Account, Transaction, ExchangeRate, Transfer],
       synchronize: true, // Автоматическая синхронизация схемы БД
       logging: process.env.NODE_ENV === 'development',
     }),
@@ -44,6 +46,7 @@ const dbConnection = process.env.DATABASE_URL
     CategoriesModule,
     AccountsModule,
     TransactionsModule,
+    TransfersModule,
     TelegramModule,
   ],
 })
