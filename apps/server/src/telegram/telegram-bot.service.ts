@@ -1,11 +1,5 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import {
-  Bot,
-  Context,
-  InlineKeyboard,
-  session,
-  SessionFlavor,
-} from 'grammy';
+import { Bot, Context, InlineKeyboard, session, SessionFlavor } from 'grammy';
 import { formatMoney, Currency } from '@swt/shared';
 import { UsersService } from '../users/users.service';
 import { AccountsService } from '../accounts/accounts.service';
@@ -16,8 +10,9 @@ import { TransactionParserService } from './transaction-parser.service';
 import {
   Draft,
   AccountLite,
+  DraftView,
   renderDraftText,
-  mainKeyboard,
+  renderDraftKeyboard,
   accountKeyboard,
   categoryKeyboard,
   dateKeyboard,
@@ -29,6 +24,7 @@ type EditField = 'amount' | 'desc' | 'newcat' | 'datecustom';
 
 interface SessionData {
   draft?: Draft;
+  view: DraftView;
   editing?: EditField | null;
 }
 
@@ -59,12 +55,14 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     if (!this.parser.isEnabled) {
-      this.logger.warn('Парсер (Claude) не настроен — Telegram-бот не запущен');
+      this.logger.warn('Парсер (LLM) не настроен — Telegram-бот не запущен');
       return;
     }
 
     this.bot = new Bot<MyContext>(token);
-    this.bot.use(session({ initial: (): SessionData => ({ draft: undefined, editing: null }) }));
+    this.bot.use(
+      session({ initial: (): SessionData => ({ draft: undefined, view: 'summary', editing: null }) }),
+    );
     this.registerHandlers(this.bot);
 
     void this.bot.api.setMyCommands([
@@ -99,9 +97,10 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     bot.command('help', (ctx) =>
       ctx.reply(
         'Напишите операцию свободным текстом: «такси 700», «кофе 200 вчера», «зарплата 120000».\n' +
-          'Я разберу фразу и покажу карточку-черновик — там можно изменить сумму, тип, счёт, ' +
-          'категорию, дату и описание, затем нажать «Сохранить».\n\n' +
-          'После сохранения есть кнопка «↩️ Отменить». Команда /undo отменяет последнюю операцию.',
+          'Я разберу фразу и покажу карточку. Если всё верно — «Сохранить». Нужно поправить — ' +
+          '«✏️ Изменить» (сумма, тип, счёт, категория, дата, описание).\n\n' +
+          'После сохранения есть «↩️ Отменить». Команда /undo отменяет последнюю операцию.\n' +
+          'Доскональная правка и статистика — в приложении.',
       ),
     );
     bot.command('undo', (ctx) => this.handleUndoCommand(ctx));
@@ -171,12 +170,13 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       };
 
       ctx.session.draft = draft;
+      ctx.session.view = 'summary';
       ctx.session.editing = null;
 
       const account = accounts.find((a) => a.id === draft.accountId);
-      const sent = await ctx.reply(renderDraftText(draft, account), {
+      const sent = await ctx.reply(renderDraftText(draft, account, 'summary'), {
         parse_mode: 'HTML',
-        reply_markup: mainKeyboard(draft),
+        reply_markup: renderDraftKeyboard(draft, accounts, 'summary'),
       });
       draft.cardMessageId = sent.message_id;
     } catch (error) {
@@ -216,7 +216,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       }
     }
     ctx.session.editing = null;
-    await this.refreshCard(ctx, draft);
+    await this.renderCard(ctx, draft, ctx.session.view);
   }
 
   // ─────────────────────────── Callback-кнопки ───────────────────────────
@@ -249,74 +249,93 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async routeDraftCallback(ctx: MyContext, draft: Draft, data: string): Promise<void> {
-    // Подменю: меняем только клавиатуру, текст карточки оставляем.
-    if (data === 'draft:acc') {
+    // Завершающие действия.
+    if (data === 'd:cancel') {
+      ctx.session.draft = undefined;
+      ctx.session.editing = null;
+      await ctx.editMessageText('❌ Черновик отменён.');
+      return void ctx.answerCallbackQuery();
+    }
+    if (data === 'd:save') {
+      return await this.commitDraft(ctx, draft);
+    }
+
+    // Переключение режима сводка ⇄ редактор.
+    if (data === 'd:edit') {
+      ctx.session.view = 'edit';
+      await this.renderCard(ctx, draft, 'edit', true);
+      return void ctx.answerCallbackQuery();
+    }
+    if (data === 'd:done') {
+      ctx.session.view = 'summary';
+      await this.renderCard(ctx, draft, 'summary', true);
+      return void ctx.answerCallbackQuery();
+    }
+
+    // Подменю (только меняем клавиатуру, текст оставляем).
+    if (data === 'd:f:acc') {
       const accounts = await this.activeAccounts(draft.userId);
       await ctx.editMessageReplyMarkup({ reply_markup: accountKeyboard(accounts) });
       return void ctx.answerCallbackQuery();
     }
-    if (data === 'draft:cat') {
-      const categories = await this.categoriesOfType(draft.userId, draft.type);
-      await ctx.editMessageReplyMarkup({ reply_markup: categoryKeyboard(categories) });
+    if (data === 'd:f:cat') {
+      const cats = await this.categoriesOfType(draft.userId, draft.type);
+      await ctx.editMessageReplyMarkup({ reply_markup: categoryKeyboard(cats) });
       return void ctx.answerCallbackQuery();
     }
-    if (data === 'draft:date') {
+    if (data === 'd:f:date') {
       await ctx.editMessageReplyMarkup({ reply_markup: dateKeyboard() });
       return void ctx.answerCallbackQuery();
     }
-    if (data === 'draft:back') {
-      await ctx.editMessageReplyMarkup({ reply_markup: mainKeyboard(draft) });
+    if (data === 'd:back') {
+      const accounts = await this.activeAccounts(draft.userId);
+      await ctx.editMessageReplyMarkup({
+        reply_markup: renderDraftKeyboard(draft, accounts, ctx.session.view),
+      });
       return void ctx.answerCallbackQuery();
     }
 
-    // Действия, требующие текстового ввода.
-    if (data === 'draft:edit:amount') {
+    // Поля, требующие текстового ввода.
+    if (data === 'd:f:amount') {
       ctx.session.editing = 'amount';
       await ctx.reply('Введите сумму числом:');
       return void ctx.answerCallbackQuery();
     }
-    if (data === 'draft:edit:desc') {
+    if (data === 'd:f:desc') {
       ctx.session.editing = 'desc';
       await ctx.reply('Введите описание:');
       return void ctx.answerCallbackQuery();
     }
-    if (data === 'draft:newcat') {
+    if (data === 'd:newcat') {
       ctx.session.editing = 'newcat';
       await ctx.reply('Введите название категории:');
       return void ctx.answerCallbackQuery();
     }
-    if (data === 'draft:setdate:custom') {
+    if (data === 'd:setdate:custom') {
       ctx.session.editing = 'datecustom';
       await ctx.reply('Введите дату в формате дд.мм.гггг:');
       return void ctx.answerCallbackQuery();
     }
 
-    // Мгновенные изменения значений → перерисовываем карточку целиком.
-    if (data === 'draft:type') {
+    // Мгновенные изменения значений → перерисовываем карточку в текущем режиме.
+    if (data === 'd:f:type') {
       draft.type = draft.type === 'expense' ? 'income' : 'expense';
-    } else if (data.startsWith('draft:setacc:')) {
-      draft.accountId = data.slice('draft:setacc:'.length);
-    } else if (data.startsWith('draft:setcat:')) {
-      const id = data.slice('draft:setcat:'.length);
+    } else if (data.startsWith('d:setacc:')) {
+      draft.accountId = data.slice('d:setacc:'.length);
+    } else if (data.startsWith('d:setcat:')) {
+      const id = data.slice('d:setcat:'.length);
       const cat = (await this.categoriesOfType(draft.userId, draft.type)).find((c) => c.id === id);
       if (cat) {
         draft.categoryName = cat.name;
         draft.categoryIcon = cat.icon;
       }
-    } else if (data.startsWith('draft:setdate:')) {
-      draft.date = this.relativeDate(data.slice('draft:setdate:'.length));
-    } else if (data === 'draft:cancel') {
-      ctx.session.draft = undefined;
-      ctx.session.editing = null;
-      await ctx.editMessageText('❌ Черновик отменён.');
-      return void ctx.answerCallbackQuery();
-    } else if (data === 'draft:save') {
-      return await this.commitDraft(ctx, draft);
+    } else if (data.startsWith('d:setdate:')) {
+      draft.date = this.relativeDate(data.slice('d:setdate:'.length));
     } else {
       return void ctx.answerCallbackQuery();
     }
 
-    await this.refreshCard(ctx, draft, true);
+    await this.renderCard(ctx, draft, ctx.session.view, true);
     await ctx.answerCallbackQuery();
   }
 
@@ -352,6 +371,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 
       ctx.session.draft = undefined;
       ctx.session.editing = null;
+      ctx.session.view = 'summary';
 
       const sign = tx.type === 'expense' ? '−' : '+';
       const money = formatMoney(Number(tx.amount), tx.currency as Currency);
@@ -368,15 +388,8 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   // ─────────────────────────── Отмена операции ───────────────────────────
 
   private async handleUndoCallback(ctx: MyContext, txId: string): Promise<void> {
-    const from = ctx.from;
-    if (!from) return;
-    const user = await this.usersService.findOrCreateByTelegram({
-      id: from.id,
-      first_name: from.first_name,
-      last_name: from.last_name,
-      username: from.username,
-      language_code: from.language_code,
-    });
+    const user = await this.userFromCtx(ctx);
+    if (!user) return;
     try {
       await this.transactionsService.remove(user.id, txId);
       await ctx.editMessageText('↩️ Операция отменена.');
@@ -387,15 +400,8 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async handleUndoCommand(ctx: MyContext): Promise<void> {
-    const from = ctx.from;
-    if (!from) return;
-    const user = await this.usersService.findOrCreateByTelegram({
-      id: from.id,
-      first_name: from.first_name,
-      last_name: from.last_name,
-      username: from.username,
-      language_code: from.language_code,
-    });
+    const user = await this.userFromCtx(ctx);
+    if (!user) return;
     const last = await this.transactionsService.findLast(user.id);
     if (!last) {
       await ctx.reply('Нет операций для отмены.');
@@ -403,9 +409,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
     const sign = last.type === 'expense' ? '−' : '+';
     const money = formatMoney(Number(last.amount), last.currency as Currency);
-    const kb = new InlineKeyboard()
-      .text('↩️ Отменить', `undo:${last.id}`)
-      .text('Нет', 'dismiss');
+    const kb = new InlineKeyboard().text('↩️ Отменить', `undo:${last.id}`).text('Нет', 'dismiss');
     await ctx.reply(`Последняя операция:\n${sign}${money} · ${last.description}\n\nОтменить её?`, {
       reply_markup: kb,
     });
@@ -413,20 +417,30 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 
   // ─────────────────────────── Вспомогательное ───────────────────────────
 
-  /** Перерисовывает сообщение-карточку (правит существующее, при сбое шлёт новое). */
-  private async refreshCard(ctx: MyContext, draft: Draft, fromCallback = false): Promise<void> {
+  /**
+   * Рендерит карточку в заданном режиме. `fromCallback` — правка пришла нажатием
+   * кнопки (редактируем текущее сообщение); иначе правка пришла отдельным
+   * сообщением — правим карточку по сохранённому id, при сбое шлём новую.
+   */
+  private async renderCard(
+    ctx: MyContext,
+    draft: Draft,
+    view: DraftView,
+    fromCallback = false,
+  ): Promise<void> {
     draft.updatedAt = Date.now();
-    const account = draft.accountId
-      ? await this.accountsService.findOne(draft.userId, draft.accountId).catch(() => undefined)
-      : undefined;
-    const text = renderDraftText(draft, account as AccountLite | undefined);
-    const opts = { parse_mode: 'HTML' as const, reply_markup: mainKeyboard(draft) };
+    const accounts = await this.activeAccounts(draft.userId);
+    const account = accounts.find((a) => a.id === draft.accountId);
+    const text = renderDraftText(draft, account, view);
+    const opts = {
+      parse_mode: 'HTML' as const,
+      reply_markup: renderDraftKeyboard(draft, accounts, view),
+    };
 
     if (fromCallback) {
       await ctx.editMessageText(text, opts);
       return;
     }
-    // Правка пришла отдельным сообщением — редактируем карточку по сохранённому id.
     const chatId = ctx.chat?.id;
     if (chatId && draft.cardMessageId) {
       try {
@@ -438,6 +452,18 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
     const sent = await ctx.reply(text, opts);
     draft.cardMessageId = sent.message_id;
+  }
+
+  private async userFromCtx(ctx: MyContext) {
+    const from = ctx.from;
+    if (!from) return null;
+    return this.usersService.findOrCreateByTelegram({
+      id: from.id,
+      first_name: from.first_name,
+      last_name: from.last_name,
+      username: from.username,
+      language_code: from.language_code,
+    });
   }
 
   private async activeAccounts(userId: string): Promise<AccountLite[]> {
