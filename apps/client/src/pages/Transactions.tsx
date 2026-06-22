@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, SlidersHorizontal, CalendarRange } from 'lucide-react';
+import { Plus, CalendarRange } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -74,10 +74,7 @@ export default function Transactions({ type }: TransactionsProps) {
   const [period, setPeriod] = useState<PeriodState>('day');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
   const [showRange, setShowRange] = useState(false);
-  const [amountMin, setAmountMin] = useState('');
-  const [amountMax, setAmountMax] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const { data: transactions = [], isLoading } = useTransactions(type);
@@ -213,19 +210,14 @@ export default function Transactions({ type }: TransactionsProps) {
     }));
   }, [range, periodTx, spanDays]);
 
-  // Доп. фильтр истории по сумме операции (диапазон дат уже задан выбранным периодом).
-  const filteredHistory = useMemo(() => {
-    const min = amountMin ? parseFloat(amountMin) : null;
-    const max = amountMax ? parseFloat(amountMax) : null;
-    return periodTx
-      .filter((t) => {
-        const amt = Number(t.amount);
-        if (min !== null && amt < min) return false;
-        if (max !== null && amt > max) return false;
-        return true;
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [periodTx, amountMin, amountMax]);
+  // История за выбранный диапазон — от новых операций к старым.
+  const filteredHistory = useMemo(
+    () =>
+      [...periodTx].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      ),
+    [periodTx]
+  );
 
   // Группировка истории по дням — для диапазона длиннее одного дня.
   // filteredHistory уже отсортирован по убыванию даты, поэтому и группы, и операции
@@ -246,13 +238,6 @@ export default function Transactions({ type }: TransactionsProps) {
     }
     return groups;
   }, [filteredHistory]);
-
-  const hasActiveFilters = !!(amountMin || amountMax);
-
-  const resetFilters = () => {
-    setAmountMin('');
-    setAmountMax('');
-  };
 
   const renderTransaction = (transaction: Transaction) => {
     const cat = getCategory(transaction.categoryId);
@@ -428,52 +413,9 @@ export default function Transactions({ type }: TransactionsProps) {
         </Card>
       )}
 
-      {/* История + фильтр по сумме */}
+      {/* История */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="text-lg font-black">История</div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className={`font-bold ${hasActiveFilters ? 'text-accent' : ''}`}
-            onClick={() => setShowFilters((v) => !v)}
-          >
-            <SlidersHorizontal className="w-4 h-4 mr-1" />
-            Фильтр
-          </Button>
-        </div>
-
-        {showFilters && (
-          <Card className="p-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-muted-foreground">Сумма от</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={amountMin}
-                  onChange={(e) => setAmountMin(e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-muted-foreground">Сумма до</Label>
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={amountMax}
-                  onChange={(e) => setAmountMax(e.target.value)}
-                  placeholder="∞"
-                />
-              </div>
-            </div>
-            {hasActiveFilters && (
-              <Button variant="outline" size="sm" className="w-full font-bold" onClick={resetFilters}>
-                Сбросить
-              </Button>
-            )}
-          </Card>
-        )}
+        <div className="text-lg font-black">История</div>
 
         {isLoading ? (
           <Card className="p-6 text-center">
@@ -482,9 +424,7 @@ export default function Transactions({ type }: TransactionsProps) {
         ) : filteredHistory.length === 0 ? (
           <Card className="p-6 text-center">
             <p className="text-muted-foreground font-semibold">
-              {periodTx.length === 0
-                ? `Нет операций ${rangeLabel}`
-                : 'Ничего не найдено по фильтру'}
+              {`Нет операций ${rangeLabel}`}
             </p>
           </Card>
         ) : multiDay ? (
