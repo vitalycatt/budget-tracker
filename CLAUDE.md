@@ -186,7 +186,7 @@
 - PostgreSQL + TypeORM 0.3 (БД `smart_wallet_tracker`, `synchronize` в dev)
 - Валидация: **Zod** через кастомный `ZodValidationPipe` + декоратор `@ZodValidation` (ошибки на русском)
 - Модули: `transactions`, `accounts`, `categories` (CRUD-контроллеры + сервисы)
-- Env (реально используются): `DATABASE_URL` *(или раздельные `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_DATABASE`)*, `PORT`, `NODE_ENV`, `CORS_ORIGIN`, `TELEGRAM_BOT_TOKEN`, `LLM_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`. Шаблон — `apps/server/env.example`. *(`DATABASE_URL` имеет приоритет; на Render даётся «Add from Database».)*
+- Env (реально используются): `DATABASE_URL` *(или раздельные `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`/`DB_DATABASE`)*, `PORT`, `NODE_ENV`, `CORS_ORIGIN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_ID`, `LLM_PROVIDER`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `GROQ_API_KEY`, `GROQ_MODEL`. Шаблон — `apps/server/env.example`. *(`DATABASE_URL` имеет приоритет; на Render даётся «Add from Database». `TELEGRAM_ADMIN_ID` — Telegram ID владельца для скрытой команды `/stats`.)*
 - **Парсер бота — переключаемый LLM-провайдер** (`TransactionParserService`): `LLM_PROVIDER=anthropic` (по умолчанию, Claude через SDK + structured output) или `groq` (бесплатная альтернатива, OpenAI-совместимый REST через `fetch`, JSON-режим). Ответ в обоих случаях валидируется Zod, поэтому провайдеру достаточно вернуть корректный JSON. Бот стартует только если у выбранного провайдера задан ключ.
 
 ### Frontend — `apps/client`
@@ -324,7 +324,8 @@
   - ✅ Дата: парсер извлекает `date` (относительные «вчера/позавчера»/явная дата → `YYYY-MM-DD`, в промпт передаём «сегодня = …»); на карточке кнопка даты (сегодня/вчера/позавчера/произвольная).
   - ✅ Отмена последней: кнопка `↩️ Отменить` на сообщении об успехе (`undo:<txId>`) + команда `/undo` (последняя по `createdAt`, атомарный откат через `TransactionsService.remove`). Доп. метод `TransactionsService.findLast`.
   - ✅ Команды/меню бота: `/start`, `/help`, `/undo` через `setMyCommands`.
-  - Файлы: `telegram/telegram-bot.service.ts` (session + роутер callback'ов), `telegram/transaction-parser.service.ts` (поле `date`), `telegram/draft-card.ts` (рендер карточки и клавиатур).
+  - ✅ Скрытая команда `/stats` (только владельцу по `TELEGRAM_ADMIN_ID`; в меню не добавлена, для остальных молча игнорируется): сводка активности — пользователи (всего/новые/онбординг), активность (DAU/WAU/MAU аппроксимируем по созданию операций/переводов), операции (число/оборот по типам, среднее на юзера), топ-категорий, счета по типам, переводы. Считается из существующих таблиц (`telegram/stats.service.ts`), без отдельного трекинга событий.
+  - Файлы: `telegram/telegram-bot.service.ts` (session + роутер callback'ов), `telegram/transaction-parser.service.ts` (поле `date`), `telegram/draft-card.ts` (рендер карточки и клавиатур), `telegram/stats.service.ts` (агрегаты для `/stats`).
 - **8.2** *(позже)*: пошаговый мастер `/add` (через `@grammyjs/conversations`), финиш в той же карточке.
 - **8.3** *(позже)*: валюта из текста, быстрые шаблоны, показ последних операций.
 
