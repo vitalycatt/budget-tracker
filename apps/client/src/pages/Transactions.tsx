@@ -1,13 +1,12 @@
 import { useState, useMemo } from 'react';
 import { Plus, CalendarRange } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { TransactionType, Transaction } from '@/stores/financeStore';
 import { Card } from '@/components/ui/card';
 import AddTransactionDialog from '@/components/AddTransactionDialog';
 import EditTransactionDialog from '@/components/EditTransactionDialog';
+import DateRangeDrawer from '@/components/DateRangeDrawer';
 import {
   AreaChart,
   Area,
@@ -118,28 +117,22 @@ export default function Transactions({ type }: TransactionsProps) {
     [transactions, range]
   );
 
-  // Значения для полей дат: на пресете показываем его границы, в 'custom' — ввод пользователя.
-  const displayFrom = period === 'custom' ? dateFrom : format(range.start as Date, 'yyyy-MM-dd');
-  const displayTo = period === 'custom' ? dateTo : format(range.end as Date, 'yyyy-MM-dd');
-
-  // Правка любого поля даты переводит в 'custom'. При переходе с пресета засеваем
-  // оба поля его границами, чтобы диапазон оставался валидным и наглядным.
-  const handleDateChange = (which: 'from' | 'to', value: string) => {
-    if (period === 'custom') {
-      which === 'from' ? setDateFrom(value) : setDateTo(value);
-      return;
-    }
-    const preset = getRange(period, new Date());
-    setDateFrom(which === 'from' ? value : format(preset.start as Date, 'yyyy-MM-dd'));
-    setDateTo(which === 'to' ? value : format(preset.end as Date, 'yyyy-MM-dd'));
-    setPeriod('custom');
-  };
-
   // Выбор вкладки-пресета сбрасывает произвольный диапазон.
   const selectPreset = (p: Period) => {
     setPeriod(p);
     setDateFrom('');
     setDateTo('');
+  };
+
+  // Применение диапазона из шторки: пустые границы = вернуться к пресету «День».
+  const applyCustomRange = (from: string, to: string) => {
+    if (!from && !to) {
+      selectPreset('day');
+      return;
+    }
+    setDateFrom(from);
+    setDateTo(to);
+    setPeriod('custom');
   };
 
   const isCustom = period === 'custom';
@@ -285,59 +278,30 @@ export default function Transactions({ type }: TransactionsProps) {
           size="icon"
           aria-label="Свой период"
           className={`shrink-0 ${isCustom ? 'text-accent' : 'text-muted-foreground'}`}
-          onClick={() => setShowRange((v) => !v)}
+          onClick={() => setShowRange(true)}
         >
           <CalendarRange className="w-5 h-5" />
         </Button>
       </div>
 
       {/* Переключатель периода — управляет всей страницей */}
-      <div className="space-y-2">
-        <Tabs value={isCustom ? '' : period} onValueChange={(v) => selectPreset(v as Period)}>
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="day" className="text-sm font-bold">День</TabsTrigger>
-            <TabsTrigger value="week" className="text-sm font-bold">Неделя</TabsTrigger>
-            <TabsTrigger value="month" className="text-sm font-bold">Месяц</TabsTrigger>
-            <TabsTrigger value="year" className="text-sm font-bold">Год</TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <Tabs value={isCustom ? '' : period} onValueChange={(v) => selectPreset(v as Period)}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="day" className="text-sm font-bold">День</TabsTrigger>
+          <TabsTrigger value="week" className="text-sm font-bold">Неделя</TabsTrigger>
+          <TabsTrigger value="month" className="text-sm font-bold">Месяц</TabsTrigger>
+          <TabsTrigger value="year" className="text-sm font-bold">Год</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-        {/* Панель произвольного диапазона дат (разворачивается по иконке в шапке) */}
-        {showRange && (
-          <Card className="p-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-muted-foreground">Дата с</Label>
-                <Input
-                  type="date"
-                  value={displayFrom}
-                  max={displayTo || undefined}
-                  onChange={(e) => handleDateChange('from', e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs font-bold text-muted-foreground">Дата по</Label>
-                <Input
-                  type="date"
-                  value={displayTo}
-                  min={displayFrom || undefined}
-                  onChange={(e) => handleDateChange('to', e.target.value)}
-                />
-              </div>
-            </div>
-            {isCustom && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full font-bold"
-                onClick={() => selectPreset('day')}
-              >
-                Вернуться к периоду
-              </Button>
-            )}
-          </Card>
-        )}
-      </div>
+      {/* Произвольный диапазон дат — мобильная шторка с range-календарём */}
+      <DateRangeDrawer
+        open={showRange}
+        onOpenChange={setShowRange}
+        from={dateFrom}
+        to={dateTo}
+        onApply={applyCustomRange}
+      />
 
       {/* Hero: итог за период + тренд */}
       <Card className="p-5 overflow-hidden">
