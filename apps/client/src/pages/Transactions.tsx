@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Plus, SlidersHorizontal } from 'lucide-react';
+import { Plus, SlidersHorizontal, CalendarRange } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,6 +30,7 @@ import {
   format,
   isWithinInterval,
   getHours,
+  differenceInCalendarDays,
   type Interval,
 } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -45,6 +46,8 @@ interface TransactionsProps {
 }
 
 type Period = 'day' | 'week' | 'month' | 'year';
+/** Состояние выбора периода: пресет (вкладка) либо произвольный диапазон дат. */
+type PeriodState = Period | 'custom';
 
 const PERIOD_LABEL: Record<Period, string> = {
   day: 'за сегодня',
@@ -53,7 +56,7 @@ const PERIOD_LABEL: Record<Period, string> = {
   year: 'за год',
 };
 
-/** Границы выбранного периода относительно текущего момента. */
+/** Границы выбранного периода-пресета относительно текущего момента. */
 function getRange(period: Period, now: Date): Interval {
   switch (period) {
     case 'day':
@@ -68,12 +71,15 @@ function getRange(period: Period, now: Date): Interval {
 }
 
 export default function Transactions({ type }: TransactionsProps) {
-  const [period, setPeriod] = useState<Period>('day');
+  const [period, setPeriod] = useState<PeriodState>('day');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [showRange, setShowRange] = useState(false);
   const [amountMin, setAmountMin] = useState('');
   const [amountMax, setAmountMax] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const { data: transactions = [], isLoading } = useTransactions(type);
   const { data: categories = [] } = useCategories();
   const { data: accounts = [] } = useAccounts();
@@ -91,13 +97,65 @@ export default function Transactions({ type }: TransactionsProps) {
   const getAccountName = (id: string) =>
     accounts.find((a) => a.id === id)?.name || 'Без счета';
 
-  // Все агрегаты страницы (итог, категории, история, график) — за выбранный период.
-  const range = useMemo(() => getRange(period, new Date()), [period]);
+  // Самая ранняя операция — нижняя граница для «Своего периода» без даты «с»
+  // (чтобы график по всем транзакциям не строился от начала эпохи).
+  const earliestDate = useMemo(() => {
+    if (transactions.length === 0) return startOfDay(new Date());
+    return new Date(Math.min(...transactions.map((t) => new Date(t.date).getTime())));
+  }, [transactions]);
+
+  // Единый эффективный диапазон управляет ВСЕЙ страницей (итог, график, категории, история).
+  // Пресет (вкладка) → фиксированные границы; 'custom' → произвольные даты пользователя
+  // (пустая дата = открытая граница: «с» → от первой операции, «по» → до сегодня).
+  const range = useMemo<Interval>(() => {
+    if (period === 'custom') {
+      const start = dateFrom ? startOfDay(new Date(dateFrom)) : startOfDay(earliestDate);
+      const end = dateTo ? endOfDay(new Date(dateTo)) : endOfDay(new Date());
+      return { start, end };
+    }
+    return getRange(period, new Date());
+  }, [period, dateFrom, dateTo, earliestDate]);
 
   const periodTx = useMemo(
     () => transactions.filter((t) => isWithinInterval(new Date(t.date), range)),
     [transactions, range]
   );
+
+  // Значения для полей дат: на пресете показываем его границы, в 'custom' — ввод пользователя.
+  const displayFrom = period === 'custom' ? dateFrom : format(range.start as Date, 'yyyy-MM-dd');
+  const displayTo = period === 'custom' ? dateTo : format(range.end as Date, 'yyyy-MM-dd');
+
+  // Правка любого поля даты переводит в 'custom'. При переходе с пресета засеваем
+  // оба поля его границами, чтобы диапазон оставался валидным и наглядным.
+  const handleDateChange = (which: 'from' | 'to', value: string) => {
+    if (period === 'custom') {
+      which === 'from' ? setDateFrom(value) : setDateTo(value);
+      return;
+    }
+    const preset = getRange(period, new Date());
+    setDateFrom(which === 'from' ? value : format(preset.start as Date, 'yyyy-MM-dd'));
+    setDateTo(which === 'to' ? value : format(preset.end as Date, 'yyyy-MM-dd'));
+    setPeriod('custom');
+  };
+
+  // Выбор вкладки-пресета сбрасывает произвольный диапазон.
+  const selectPreset = (p: Period) => {
+    setPeriod(p);
+    setDateFrom('');
+    setDateTo('');
+  };
+
+  const isCustom = period === 'custom';
+  const rangeLabel = isCustom
+    ? dateFrom || dateTo
+      ? 'за выбранный период'
+      : 'за всё время'
+    : PERIOD_LABEL[period];
+
+  // Длина диапазона в днях: 0 = один день. Используем для гранулярности графика
+  // и для группировки истории по дням (когда выбрано больше одного дня).
+  const spanDays = differenceInCalendarDays(range.end as Date, range.start as Date);
+  const multiDay = spanDays >= 1;
 
   // Агрегаты считаем в базовой валюте (amountInBase) — транзакции бывают в разных валютах
   const totalAmount = periodTx.reduce(
@@ -116,50 +174,46 @@ export default function Transactions({ type }: TransactionsProps) {
   }, [periodTx, categories]);
 
   const chartData = useMemo(() => {
-    const now = new Date();
     const sumIn = (start: Date, end: Date) =>
       periodTx
         .filter((t) => isWithinInterval(new Date(t.date), { start, end }))
         .reduce((sum, t) => sum + Number(t.amountInBase ?? t.amount), 0);
 
-    if (period === 'day') {
-      // День разбиваем на 6 блоков по 4 часа — компактно и наглядно на телефоне.
+    // Гранулярность графика зависит от длины диапазона (пороги совпадают с пресетами:
+    // день → часы, неделя → дни, месяц → недели, год → месяцы).
+    if (spanDays < 2) {
+      // Короткий диапазон (день) — 6 блоков по 4 часа: компактно и наглядно на телефоне.
       return Array.from({ length: 6 }, (_, i) => {
         const from = i * 4;
         const to = from + 4;
         const amount = periodTx
           .filter((t) => {
-            const h = getHours(new Date(t.date));
-            return h >= from && h < to;
+            const d = new Date(t.date);
+            return isWithinInterval(d, range) && getHours(d) >= from && getHours(d) < to;
           })
           .reduce((sum, t) => sum + Number(t.amountInBase ?? t.amount), 0);
         return { label: `${String(from).padStart(2, '0')}:00`, amount };
       });
     }
-
-    let intervals: Date[];
-    if (period === 'week') {
-      intervals = eachDayOfInterval(range);
-      return intervals.map((date) => ({
-        label: format(date, 'EEEEEE', { locale: ru }),
+    if (spanDays <= 14) {
+      return eachDayOfInterval(range).map((date) => ({
+        label: format(date, 'd MMM', { locale: ru }),
         amount: sumIn(startOfDay(date), endOfDay(date)),
       }));
     }
-    if (period === 'month') {
-      intervals = eachWeekOfInterval(range, { locale: ru });
-      return intervals.map((date) => ({
+    if (spanDays <= 92) {
+      return eachWeekOfInterval(range, { locale: ru }).map((date) => ({
         label: format(date, 'd MMM', { locale: ru }),
         amount: sumIn(date, endOfWeek(date, { locale: ru })),
       }));
     }
-    intervals = eachMonthOfInterval(range);
-    return intervals.map((date) => ({
+    return eachMonthOfInterval(range).map((date) => ({
       label: format(date, 'LLL', { locale: ru }),
-      amount: sumIn(date, endOfMonth(date)),
+      amount: sumIn(startOfMonth(date), endOfMonth(date)),
     }));
-  }, [period, range, periodTx]);
+  }, [range, periodTx, spanDays]);
 
-  // Доп. фильтр истории по сумме операции (период уже задаёт диапазон дат).
+  // Доп. фильтр истории по сумме операции (диапазон дат уже задан выбранным периодом).
   const filteredHistory = useMemo(() => {
     const min = amountMin ? parseFloat(amountMin) : null;
     const max = amountMax ? parseFloat(amountMax) : null;
@@ -173,6 +227,26 @@ export default function Transactions({ type }: TransactionsProps) {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [periodTx, amountMin, amountMax]);
 
+  // Группировка истории по дням — для диапазона длиннее одного дня.
+  // filteredHistory уже отсортирован по убыванию даты, поэтому и группы, и операции
+  // внутри них идут от новых к старым.
+  const historyGroups = useMemo(() => {
+    const groups: { key: string; label: string; items: Transaction[] }[] = [];
+    const byKey = new Map<string, (typeof groups)[number]>();
+    for (const t of filteredHistory) {
+      const d = new Date(t.date);
+      const key = format(d, 'yyyy-MM-dd');
+      let group = byKey.get(key);
+      if (!group) {
+        group = { key, label: format(d, 'd MMMM yyyy', { locale: ru }), items: [] };
+        byKey.set(key, group);
+        groups.push(group);
+      }
+      group.items.push(t);
+    }
+    return groups;
+  }, [filteredHistory]);
+
   const hasActiveFilters = !!(amountMin || amountMax);
 
   const resetFilters = () => {
@@ -180,30 +254,110 @@ export default function Transactions({ type }: TransactionsProps) {
     setAmountMax('');
   };
 
+  const renderTransaction = (transaction: Transaction) => {
+    const cat = getCategory(transaction.categoryId);
+    return (
+      <Card
+        key={transaction.id}
+        className="p-4 cursor-pointer hover:bg-accent/10 active:scale-[0.99] transition-all"
+        onClick={() => setEditTx(transaction)}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-xl"
+            style={{ backgroundColor: (cat?.color ?? '#999') + '20' }}
+          >
+            {cat?.icon ?? '🏷️'}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-bold truncate">{transaction.description}</div>
+            <div className="text-xs text-muted-foreground font-semibold truncate">
+              {getAccountName(transaction.accountId)} ·{' '}
+              {new Date(transaction.date).toLocaleDateString('ru-RU')}
+            </div>
+          </div>
+          <div className={`text-lg font-black shrink-0 ${amountClass}`}>
+            {sign}
+            {formatMoney(Number(transaction.amount), transaction.currency)}
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
   return (
     <div className="space-y-5 pb-4">
-      {/* Шапка */}
-      <div className="pt-1">
-        <h1 className="text-2xl font-black">{title}</h1>
-        <p className="text-sm text-muted-foreground font-semibold">
-          {isIncome ? 'Сколько заработал' : 'Сколько потратил'}
-        </p>
+      {/* Шапка: заголовок + триггер «Свой период» (произвольный диапазон дат) */}
+      <div className="pt-1 flex items-start justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-black">{title}</h1>
+          <p className="text-sm text-muted-foreground font-semibold">
+            {isIncome ? 'Сколько заработал' : 'Сколько потратил'}
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Свой период"
+          className={`shrink-0 ${isCustom ? 'text-accent' : 'text-muted-foreground'}`}
+          onClick={() => setShowRange((v) => !v)}
+        >
+          <CalendarRange className="w-5 h-5" />
+        </Button>
       </div>
 
       {/* Переключатель периода — управляет всей страницей */}
-      <Tabs value={period} onValueChange={(v) => setPeriod(v as Period)}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="day" className="text-sm font-bold">День</TabsTrigger>
-          <TabsTrigger value="week" className="text-sm font-bold">Неделя</TabsTrigger>
-          <TabsTrigger value="month" className="text-sm font-bold">Месяц</TabsTrigger>
-          <TabsTrigger value="year" className="text-sm font-bold">Год</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="space-y-2">
+        <Tabs value={isCustom ? '' : period} onValueChange={(v) => selectPreset(v as Period)}>
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="day" className="text-sm font-bold">День</TabsTrigger>
+            <TabsTrigger value="week" className="text-sm font-bold">Неделя</TabsTrigger>
+            <TabsTrigger value="month" className="text-sm font-bold">Месяц</TabsTrigger>
+            <TabsTrigger value="year" className="text-sm font-bold">Год</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* Панель произвольного диапазона дат (разворачивается по иконке в шапке) */}
+        {showRange && (
+          <Card className="p-4 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-muted-foreground">Дата с</Label>
+                <Input
+                  type="date"
+                  value={displayFrom}
+                  max={displayTo || undefined}
+                  onChange={(e) => handleDateChange('from', e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-muted-foreground">Дата по</Label>
+                <Input
+                  type="date"
+                  value={displayTo}
+                  min={displayFrom || undefined}
+                  onChange={(e) => handleDateChange('to', e.target.value)}
+                />
+              </div>
+            </div>
+            {isCustom && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full font-bold"
+                onClick={() => selectPreset('day')}
+              >
+                Вернуться к периоду
+              </Button>
+            )}
+          </Card>
+        )}
+      </div>
 
       {/* Hero: итог за период + тренд */}
       <Card className="p-5 overflow-hidden">
         <div className="text-sm text-muted-foreground font-semibold mb-1">
-          {(isIncome ? 'Доходы ' : 'Расходы ') + PERIOD_LABEL[period]}
+          {(isIncome ? 'Доходы ' : 'Расходы ') + rangeLabel}
         </div>
         <div className={`text-4xl font-black mb-4 ${isIncome ? 'text-accent' : ''}`}>
           {formatMoney(totalAmount, baseCurrency)}
@@ -329,41 +483,20 @@ export default function Transactions({ type }: TransactionsProps) {
           <Card className="p-6 text-center">
             <p className="text-muted-foreground font-semibold">
               {periodTx.length === 0
-                ? `Нет операций ${PERIOD_LABEL[period]}`
+                ? `Нет операций ${rangeLabel}`
                 : 'Ничего не найдено по фильтру'}
             </p>
           </Card>
+        ) : multiDay ? (
+          // Диапазон длиннее дня — группируем по дням с заголовком-датой.
+          historyGroups.map((group) => (
+            <div key={group.key} className="space-y-3">
+              <div className="text-sm font-bold text-muted-foreground pt-1">{group.label}</div>
+              {group.items.map(renderTransaction)}
+            </div>
+          ))
         ) : (
-          filteredHistory.map((transaction) => {
-            const cat = getCategory(transaction.categoryId);
-            return (
-              <Card
-                key={transaction.id}
-                className="p-4 cursor-pointer hover:bg-accent/10 active:scale-[0.99] transition-all"
-                onClick={() => setEditTx(transaction)}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-11 h-11 shrink-0 rounded-full flex items-center justify-center text-xl"
-                    style={{ backgroundColor: (cat?.color ?? '#999') + '20' }}
-                  >
-                    {cat?.icon ?? '🏷️'}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold truncate">{transaction.description}</div>
-                    <div className="text-xs text-muted-foreground font-semibold truncate">
-                      {getAccountName(transaction.accountId)} ·{' '}
-                      {new Date(transaction.date).toLocaleDateString('ru-RU')}
-                    </div>
-                  </div>
-                  <div className={`text-lg font-black shrink-0 ${amountClass}`}>
-                    {sign}
-                    {formatMoney(Number(transaction.amount), transaction.currency)}
-                  </div>
-                </div>
-              </Card>
-            );
-          })
+          filteredHistory.map(renderTransaction)
         )}
       </div>
 
