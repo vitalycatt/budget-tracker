@@ -409,8 +409,8 @@ export default function Transactions({ type }: TransactionsProps) {
         size="lg"
         className="fixed h-16 w-16 rounded-full shadow-lg bg-accent hover:bg-accent/90 text-foreground z-50"
         style={{
-          right: 'calc(1rem + env(safe-area-inset-right))',
-          bottom: 'calc(5rem + env(safe-area-inset-bottom) + 1rem)',
+          right: 'calc(1rem + var(--tg-safe-right, env(safe-area-inset-right, 0px)))',
+          bottom: 'calc(5rem + var(--tg-safe-bottom, env(safe-area-inset-bottom, 0px)) + 1rem)',
         }}
         onClick={() => setDialogOpen(true)}
       >
