@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import Onboarding from "./components/Onboarding";
+import LoadingScreen from "./components/LoadingScreen";
 import Transactions from "./pages/Transactions";
 import Accounts from "./pages/Accounts";
 import NotFound from "./pages/NotFound";
@@ -25,11 +26,7 @@ const Gate = () => {
   const { data: user, isLoading, isError } = useCurrentUser();
 
   if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground font-semibold">Загрузка…</p>
-      </div>
-    );
+    return <LoadingScreen />;
   }
 
   if (isError) {
