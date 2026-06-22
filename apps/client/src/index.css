@@ -11,7 +11,10 @@
   padding-top: var(--tg-safe-top, env(safe-area-inset-top, 0px));
   padding-left: var(--tg-safe-left, env(safe-area-inset-left, 0px));
   padding-right: var(--tg-safe-right, env(safe-area-inset-right, 0px));
-  /* Единый фон для всего полотна, включая верхнюю safe-area полосу Telegram. */
+  /* Нижний инсет (дом-индикатор + нижняя полоса Telegram в fullscreen) тоже красим
+     фоном приложения, чтобы под навигацией не просвечивал тёмный фон Telegram. */
+  padding-bottom: var(--tg-safe-bottom, env(safe-area-inset-bottom, 0px));
+  /* Единый фон для всего полотна, включая верхнюю и нижнюю safe-area полосы Telegram. */
   background-color: hsl(var(--background));
   min-height: 100dvh;
 }

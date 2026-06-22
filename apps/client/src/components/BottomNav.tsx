@@ -13,9 +13,11 @@ export const BottomNav = () => {
     <nav
       className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/60 bg-card/80 backdrop-blur-xl"
       style={{
-        paddingBottom: "env(safe-area-inset-bottom)",
-        paddingLeft: "env(safe-area-inset-left)",
-        paddingRight: "env(safe-area-inset-right)",
+        // Внутри Telegram нижний инсет приходит как --tg-safe-bottom (CSS env() = 0),
+        // тянем фон навбара в зону дом-индикатора, чтобы под ним не было тёмной полосы.
+        paddingBottom: "var(--tg-safe-bottom, env(safe-area-inset-bottom, 0px))",
+        paddingLeft: "var(--tg-safe-left, env(safe-area-inset-left, 0px))",
+        paddingRight: "var(--tg-safe-right, env(safe-area-inset-right, 0px))",
       }}
     >
       <div className="flex justify-around items-center h-20 px-2 max-w-screen-sm mx-auto">

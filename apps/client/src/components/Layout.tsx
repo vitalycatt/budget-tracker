@@ -14,7 +14,10 @@ export const Layout = ({ children }: LayoutProps) => {
   return (
     <div
       className="min-h-screen bg-background"
-      style={{ paddingBottom: "calc(5rem + env(safe-area-inset-bottom) + 1rem)" }}
+      style={{
+        paddingBottom:
+          "calc(5rem + var(--tg-safe-bottom, env(safe-area-inset-bottom, 0px)) + 1rem)",
+      }}
     >
       <TopBar />
       <div className="max-w-screen-sm mx-auto px-4 pt-3">{children}</div>
