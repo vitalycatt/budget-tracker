@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { Bot, Context, InlineKeyboard, session, SessionFlavor } from 'grammy';
 import { formatMoney, Currency } from '@swt/shared';
 import { UsersService } from '../users/users.service';
@@ -7,6 +12,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { CategoryType } from '../categories/entities/category.entity';
 import { TransactionsService } from '../transactions/transactions.service';
 import { TransactionParserService } from './transaction-parser.service';
+import { StatsService } from './stats.service';
 import {
   Draft,
   AccountLite,
@@ -46,6 +52,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     private readonly categoriesService: CategoriesService,
     private readonly transactionsService: TransactionsService,
     private readonly parser: TransactionParserService,
+    private readonly statsService: StatsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -61,7 +68,13 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 
     this.bot = new Bot<MyContext>(token);
     this.bot.use(
-      session({ initial: (): SessionData => ({ draft: undefined, view: 'summary', editing: null }) }),
+      session({
+        initial: (): SessionData => ({
+          draft: undefined,
+          view: 'summary',
+          editing: null,
+        }),
+      }),
     );
     this.registerHandlers(this.bot);
 
@@ -73,7 +86,8 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 
     // Long-polling в фоне (не блокируем bootstrap Nest)
     void this.bot.start({
-      onStart: (info) => this.logger.log(`🤖 Telegram-бот запущен: @${info.username}`),
+      onStart: (info) =>
+        this.logger.log(`🤖 Telegram-бот запущен: @${info.username}`),
     });
   }
 
@@ -104,6 +118,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       ),
     );
     bot.command('undo', (ctx) => this.handleUndoCommand(ctx));
+    bot.command('stats', (ctx) => this.handleStatsCommand(ctx));
 
     bot.on('message:text', (ctx) => this.handleText(ctx));
     bot.on('callback_query:data', (ctx) => this.handleCallback(ctx));
@@ -137,7 +152,10 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       ]);
       const accounts = accountsAll.filter((a) => !a.isArchived);
 
-      const parsed = await this.parser.parse(text, categories.map((c) => c.name));
+      const parsed = await this.parser.parse(
+        text,
+        categories.map((c) => c.name),
+      );
       if (!parsed) {
         await ctx.reply(
           'Не понял операцию. Опишите трату или доход, например: «потратил 500 на кофе».',
@@ -146,14 +164,18 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (accounts.length === 0) {
-        await ctx.reply('Сначала создайте счёт в приложении, затем повторите операцию.');
+        await ctx.reply(
+          'Сначала создайте счёт в приложении, затем повторите операцию.',
+        );
         return;
       }
 
       // Иконку категории берём у существующей одноимённой (тот же тип), иначе дефолт.
       const categoryType = parsed.type as CategoryType;
       const existing = categories.find(
-        (c) => c.type === categoryType && c.name.toLowerCase() === parsed.categoryName.toLowerCase(),
+        (c) =>
+          c.type === categoryType &&
+          c.name.toLowerCase() === parsed.categoryName.toLowerCase(),
       );
 
       const draft: Draft = {
@@ -186,7 +208,11 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Применяет введённое текстом значение к полю черновика и обновляет карточку. */
-  private async applyFieldEdit(ctx: MyContext, field: EditField, text: string): Promise<void> {
+  private async applyFieldEdit(
+    ctx: MyContext,
+    field: EditField,
+    text: string,
+  ): Promise<void> {
     const draft = ctx.session.draft!;
     switch (field) {
       case 'amount': {
@@ -208,7 +234,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       case 'datecustom': {
         const iso = this.parseManualDate(text);
         if (!iso) {
-          await ctx.reply('Не понял дату. Формат: дд.мм.гггг, например 15.05.2026.');
+          await ctx.reply(
+            'Не понял дату. Формат: дд.мм.гггг, например 15.05.2026.',
+          );
           return;
         }
         draft.date = iso;
@@ -226,7 +254,8 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     if (!data) return;
 
     try {
-      if (data.startsWith('undo:')) return await this.handleUndoCallback(ctx, data.slice(5));
+      if (data.startsWith('undo:'))
+        return await this.handleUndoCallback(ctx, data.slice(5));
       if (data === 'dismiss') {
         await ctx.editMessageReplyMarkup();
         await ctx.answerCallbackQuery({ text: 'Ок, оставил.' });
@@ -237,18 +266,26 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       if (!draft || Date.now() - draft.updatedAt > DRAFT_TTL_MS) {
         ctx.session.draft = undefined;
         ctx.session.editing = null;
-        await ctx.answerCallbackQuery({ text: 'Черновик устарел, повторите ввод.' });
+        await ctx.answerCallbackQuery({
+          text: 'Черновик устарел, повторите ввод.',
+        });
         return;
       }
 
       await this.routeDraftCallback(ctx, draft, data);
     } catch (error) {
       this.logger.error(`handleCallback: ${(error as Error).message}`);
-      await ctx.answerCallbackQuery({ text: 'Не удалось обработать действие.' });
+      await ctx.answerCallbackQuery({
+        text: 'Не удалось обработать действие.',
+      });
     }
   }
 
-  private async routeDraftCallback(ctx: MyContext, draft: Draft, data: string): Promise<void> {
+  private async routeDraftCallback(
+    ctx: MyContext,
+    draft: Draft,
+    data: string,
+  ): Promise<void> {
     // Завершающие действия.
     if (data === 'd:cancel') {
       ctx.session.draft = undefined;
@@ -275,12 +312,16 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     // Подменю (только меняем клавиатуру, текст оставляем).
     if (data === 'd:f:acc') {
       const accounts = await this.activeAccounts(draft.userId);
-      await ctx.editMessageReplyMarkup({ reply_markup: accountKeyboard(accounts) });
+      await ctx.editMessageReplyMarkup({
+        reply_markup: accountKeyboard(accounts),
+      });
       return void ctx.answerCallbackQuery();
     }
     if (data === 'd:f:cat') {
       const cats = await this.categoriesOfType(draft.userId, draft.type);
-      await ctx.editMessageReplyMarkup({ reply_markup: categoryKeyboard(cats) });
+      await ctx.editMessageReplyMarkup({
+        reply_markup: categoryKeyboard(cats),
+      });
       return void ctx.answerCallbackQuery();
     }
     if (data === 'd:f:date') {
@@ -324,7 +365,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       draft.accountId = data.slice('d:setacc:'.length);
     } else if (data.startsWith('d:setcat:')) {
       const id = data.slice('d:setcat:'.length);
-      const cat = (await this.categoriesOfType(draft.userId, draft.type)).find((c) => c.id === id);
+      const cat = (await this.categoriesOfType(draft.userId, draft.type)).find(
+        (c) => c.id === id,
+      );
       if (cat) {
         draft.categoryName = cat.name;
         draft.categoryIcon = cat.icon;
@@ -348,7 +391,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     const categoryType = draft.type as CategoryType;
     const categories = await this.categoriesService.findAll(draft.userId);
     let category = categories.find(
-      (c) => c.type === categoryType && c.name.toLowerCase() === draft.categoryName.toLowerCase(),
+      (c) =>
+        c.type === categoryType &&
+        c.name.toLowerCase() === draft.categoryName.toLowerCase(),
     );
     if (!category) {
       category = await this.categoriesService.create(draft.userId, {
@@ -360,14 +405,18 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
-      const tx = await this.transactionsService.create(draft.userId, draft.baseCurrency, {
-        type: draft.type,
-        amount: draft.amount,
-        categoryId: category.id,
-        accountId: draft.accountId,
-        description: draft.description || category.name,
-        date: new Date(draft.date),
-      });
+      const tx = await this.transactionsService.create(
+        draft.userId,
+        draft.baseCurrency,
+        {
+          type: draft.type,
+          amount: draft.amount,
+          categoryId: category.id,
+          accountId: draft.accountId,
+          description: draft.description || category.name,
+          date: new Date(draft.date),
+        },
+      );
 
       ctx.session.draft = undefined;
       ctx.session.editing = null;
@@ -381,13 +430,18 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       await ctx.answerCallbackQuery({ text: 'Сохранено' });
     } catch (error) {
       // Напр. «Недостаточно средств на счете» — оставляем черновик, чтобы поправить.
-      await ctx.answerCallbackQuery({ text: (error as Error).message.slice(0, 190) });
+      await ctx.answerCallbackQuery({
+        text: (error as Error).message.slice(0, 190),
+      });
     }
   }
 
   // ─────────────────────────── Отмена операции ───────────────────────────
 
-  private async handleUndoCallback(ctx: MyContext, txId: string): Promise<void> {
+  private async handleUndoCallback(
+    ctx: MyContext,
+    txId: string,
+  ): Promise<void> {
     const user = await this.userFromCtx(ctx);
     if (!user) return;
     try {
@@ -395,7 +449,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       await ctx.editMessageText('↩️ Операция отменена.');
       await ctx.answerCallbackQuery({ text: 'Отменено' });
     } catch {
-      await ctx.answerCallbackQuery({ text: 'Не удалось отменить (возможно, уже удалена).' });
+      await ctx.answerCallbackQuery({
+        text: 'Не удалось отменить (возможно, уже удалена).',
+      });
     }
   }
 
@@ -409,10 +465,42 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     }
     const sign = last.type === 'expense' ? '−' : '+';
     const money = formatMoney(Number(last.amount), last.currency as Currency);
-    const kb = new InlineKeyboard().text('↩️ Отменить', `undo:${last.id}`).text('Нет', 'dismiss');
-    await ctx.reply(`Последняя операция:\n${sign}${money} · ${last.description}\n\nОтменить её?`, {
-      reply_markup: kb,
-    });
+    const kb = new InlineKeyboard()
+      .text('↩️ Отменить', `undo:${last.id}`)
+      .text('Нет', 'dismiss');
+    await ctx.reply(
+      `Последняя операция:\n${sign}${money} · ${last.description}\n\nОтменить её?`,
+      {
+        reply_markup: kb,
+      },
+    );
+  }
+
+  // ─────────────────────────── Статистика (только владелец) ───────────────────────────
+
+  /**
+   * Сводка активности. Доступна только владельцу (TELEGRAM_ADMIN_ID).
+   * Команда скрыта из меню; для всех остальных молча игнорируется,
+   * чтобы не раскрывать её существование.
+   */
+  private async handleStatsCommand(ctx: MyContext): Promise<void> {
+    const adminId = process.env.TELEGRAM_ADMIN_ID;
+    const fromId = ctx.from?.id;
+    if (!adminId || !fromId || String(fromId) !== adminId) {
+      if (!adminId) {
+        this.logger.warn(
+          'TELEGRAM_ADMIN_ID не задан — команда /stats недоступна',
+        );
+      }
+      return;
+    }
+    try {
+      const text = await this.statsService.getStatsText();
+      await ctx.reply(text, { parse_mode: 'HTML' });
+    } catch (error) {
+      this.logger.error(`handleStatsCommand: ${(error as Error).message}`);
+      await ctx.reply('Не удалось собрать статистику.');
+    }
   }
 
   // ─────────────────────────── Вспомогательное ───────────────────────────
@@ -505,7 +593,12 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     let year = m[3] ? Number(m[3]) : new Date().getFullYear();
     if (year < 100) year += 2000;
     const d = new Date(year, mon, day, 12, 0, 0);
-    if (Number.isNaN(d.getTime()) || d.getMonth() !== mon || d.getDate() !== day) return null;
+    if (
+      Number.isNaN(d.getTime()) ||
+      d.getMonth() !== mon ||
+      d.getDate() !== day
+    )
+      return null;
     return d.toISOString();
   }
 }
