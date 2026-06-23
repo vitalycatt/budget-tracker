@@ -1,5 +1,6 @@
 import { InlineKeyboard } from 'grammy';
 import { formatMoney, Currency } from '@swt/shared';
+import { appDateStr } from '../common/app-date';
 
 /**
  * Черновик операции в боте — единая точка подтверждения для всех способов ввода
@@ -47,17 +48,16 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** Человекочитаемая метка даты: сегодня / вчера / позавчера / дд.мм.гггг. */
+/** Человекочитаемая метка даты: сегодня / вчера / позавчера / дд.мм.гггг (в таймзоне приложения). */
 export function formatDateLabel(iso: string, now = new Date()): string {
-  const d = new Date(iso);
-  const startOf = (x: Date) => Date.UTC(x.getFullYear(), x.getMonth(), x.getDate());
-  const diffDays = Math.round((startOf(now) - startOf(d)) / MS_PER_DAY);
+  const dayStr = appDateStr(new Date(iso));
+  const startOf = (s: string) => Date.parse(`${s}T00:00:00.000Z`);
+  const diffDays = Math.round((startOf(appDateStr(now)) - startOf(dayStr)) / MS_PER_DAY);
   if (diffDays === 0) return 'сегодня';
   if (diffDays === 1) return 'вчера';
   if (diffDays === 2) return 'позавчера';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}.${mm}.${d.getFullYear()}`;
+  const [y, mm, dd] = dayStr.split('-');
+  return `${dd}.${mm}.${y}`;
 }
 
 /**

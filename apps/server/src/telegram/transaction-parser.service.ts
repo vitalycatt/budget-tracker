@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import { appDateStr } from '../common/app-date';
 
 /** Результат разбора фразы пользователя ботом. */
 export const parsedTransactionSchema = z.object({
@@ -163,7 +164,7 @@ export class TransactionParserService {
         'Если счёт в тексте не упомянут — опусти accountName и accountCurrency.'
       : '';
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = appDateStr();
     const lines = [
       'Ты — помощник учёта личных финансов. Пользователь пишет короткие фразы о тратах и доходах на русском.',
       'Извлеки из фразы: тип (доход income / расход expense), сумму (число), категорию и краткое описание.',

@@ -6,14 +6,28 @@ import { cn } from "@/lib/utils";
 const Drawer = ({
   shouldScaleBackground = true,
   nested = false,
+  // В Telegram WebView (полноэкранный режим + свой контроль вьюпорта) встроенное
+  // в vaul репозиционирование инпутов считает высоту клавиатуры по
+  // window.innerHeight − visualViewport.height и ломает шторку. Отключаем его и
+  // сами аккуратно подскролливаем поле в видимую зону (см. DrawerContent).
+  repositionInputs = false,
   ...props
 }: React.ComponentProps<typeof DrawerPrimitive.Root> & { nested?: boolean }) => {
   // Вложенная шторка (например, календарь поверх модалки-шторки) — через NestedRoot,
   // чтобы vaul корректно стекал слои и не закрывал родителя при перетаскивании.
   const Root = nested ? DrawerPrimitive.NestedRoot : DrawerPrimitive.Root;
-  return <Root shouldScaleBackground={shouldScaleBackground} {...props} />;
+  return (
+    <Root
+      shouldScaleBackground={shouldScaleBackground}
+      repositionInputs={repositionInputs}
+      {...props}
+    />
+  );
 };
 Drawer.displayName = "Drawer";
+
+/** Поля, которые поднимают экранную клавиатуру и которые нужно подскроллить в зону видимости. */
+const KEYBOARD_FIELDS = 'input:not([type="button"]):not([type="checkbox"]):not([type="radio"]), textarea, [contenteditable="true"]';
 
 const DrawerTrigger = DrawerPrimitive.Trigger;
 
@@ -32,22 +46,37 @@ DrawerOverlay.displayName = DrawerPrimitive.Overlay.displayName;
 const DrawerContent = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <DrawerPortal>
-    <DrawerOverlay />
-    <DrawerPrimitive.Content
-      ref={ref}
-      className={cn(
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
-        className,
-      )}
-      {...props}
-    >
-      <div className="mx-auto mt-4 h-2 w-[100px] rounded-full bg-muted" />
-      {children}
-    </DrawerPrimitive.Content>
-  </DrawerPortal>
-));
+>(({ className, children, onFocus, ...props }, ref) => {
+  // React-событие focus всплывает, поэтому ловим фокус любого поля внутри шторки
+  // и после подъёма клавиатуры подскролливаем его в центр видимой области.
+  const handleFocus = (event: React.FocusEvent<HTMLDivElement>) => {
+    onFocus?.(event);
+    const target = event.target as HTMLElement;
+    if (!target.matches?.(KEYBOARD_FIELDS)) return;
+    // Ждём анимацию клавиатуры/стабилизацию вьюпорта Telegram, затем центрируем поле.
+    window.setTimeout(() => {
+      target.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 300);
+  };
+
+  return (
+    <DrawerPortal>
+      <DrawerOverlay />
+      <DrawerPrimitive.Content
+        ref={ref}
+        onFocus={handleFocus}
+        className={cn(
+          "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
+          className,
+        )}
+        {...props}
+      >
+        <div className="mx-auto mt-4 h-2 w-[100px] rounded-full bg-muted" />
+        {children}
+      </DrawerPrimitive.Content>
+    </DrawerPortal>
+  );
+});
 DrawerContent.displayName = "DrawerContent";
 
 const DrawerHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
