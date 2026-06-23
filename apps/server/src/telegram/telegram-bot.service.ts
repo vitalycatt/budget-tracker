@@ -155,6 +155,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       const parsed = await this.parser.parse(
         text,
         categories.map((c) => c.name),
+        accounts.map((a) => ({ name: a.name, currency: a.currency })),
       );
       if (!parsed) {
         await ctx.reply(
@@ -185,7 +186,9 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
         amount: parsed.amount,
         categoryName: existing?.name ?? parsed.categoryName,
         categoryIcon: existing?.icon ?? NEW_CATEGORY_ICON,
-        accountId: accounts.length === 1 ? accounts[0].id : undefined,
+        accountId:
+          this.matchAccount(accounts, parsed.accountName, parsed.accountCurrency) ??
+          (accounts.length === 1 ? accounts[0].id : undefined),
         description: parsed.description || parsed.categoryName,
         date: this.resolveParsedDate(parsed.date),
         updatedAt: Date.now(),
@@ -565,6 +568,28 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   ): Promise<{ id: string; name: string; icon: string }[]> {
     const all = await this.categoriesService.findAll(userId);
     return all.filter((c) => c.type === (type as CategoryType));
+  }
+
+  /**
+   * Сопоставляет распознанный парсером счёт с реальным счётом пользователя.
+   * Совпадение по имени (без учёта регистра); при одноимённых счетах различаем
+   * по валюте (`accountCurrency`). Если однозначно определить не вышло —
+   * возвращает undefined (сработает обычный фолбэк: один счёт / пикер).
+   */
+  private matchAccount(
+    accounts: { id: string; name: string; currency: string }[],
+    name?: string,
+    currency?: string,
+  ): string | undefined {
+    if (!name) return undefined;
+    const wanted = name.trim().toLowerCase();
+    let matches = accounts.filter((a) => a.name.toLowerCase() === wanted);
+    if (matches.length > 1 && currency) {
+      const cur = currency.trim().toUpperCase();
+      const narrowed = matches.filter((a) => a.currency.toUpperCase() === cur);
+      if (narrowed.length) matches = narrowed;
+    }
+    return matches.length === 1 ? matches[0].id : undefined;
   }
 
   /** Дата из парсера: валидный YYYY-MM-DD → полдень того дня; иначе сейчас. */

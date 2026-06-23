@@ -3,9 +3,16 @@ import { Drawer as DrawerPrimitive } from "vaul";
 
 import { cn } from "@/lib/utils";
 
-const Drawer = ({ shouldScaleBackground = true, ...props }: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
-  <DrawerPrimitive.Root shouldScaleBackground={shouldScaleBackground} {...props} />
-);
+const Drawer = ({
+  shouldScaleBackground = true,
+  nested = false,
+  ...props
+}: React.ComponentProps<typeof DrawerPrimitive.Root> & { nested?: boolean }) => {
+  // Вложенная шторка (например, календарь поверх модалки-шторки) — через NestedRoot,
+  // чтобы vaul корректно стекал слои и не закрывал родителя при перетаскивании.
+  const Root = nested ? DrawerPrimitive.NestedRoot : DrawerPrimitive.Root;
+  return <Root shouldScaleBackground={shouldScaleBackground} {...props} />;
+};
 Drawer.displayName = "Drawer";
 
 const DrawerTrigger = DrawerPrimitive.Trigger;

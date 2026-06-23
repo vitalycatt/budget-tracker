@@ -11,11 +11,12 @@ import { useCategories, useCreateCategory } from "@/hooks/use-categories";
 import { useCreateTransaction } from "@/hooks/use-transactions";
 import { formatMoney, CURRENCY_META } from "@swt/shared";
 import {
-  Dialog,
-  DialogTitle,
-  DialogHeader,
-  DialogContent,
-} from "@/components/ui/dialog";
+  Drawer,
+  DrawerTitle,
+  DrawerHeader,
+  DrawerContent,
+} from "@/components/ui/drawer";
+import DatePickerDrawer from "@/components/DatePickerDrawer";
 
 /** Шаги ввода: сначала счёт (он задаёт валюту), потом сумма, потом категория. */
 type Step = "account" | "amount" | "category";
@@ -39,11 +40,6 @@ const toDateInput = (d: Date) => {
 };
 
 const todayInput = () => toDateInput(new Date());
-const yesterdayInput = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return toDateInput(d);
-};
 
 export default function AddTransactionDialog({
   open,
@@ -155,18 +151,18 @@ export default function AddTransactionDialog({
   const title = type === "income" ? "Новый доход" : "Новый расход";
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-sm">
+    <Drawer open={open} onOpenChange={handleClose}>
+      <DrawerContent className="max-h-[92vh]">
         {/* Шаг 1 — счёт (задаёт валюту операции) */}
         {step === "account" && (
           <>
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black">{title}</DialogTitle>
-            </DialogHeader>
-            <p className="text-sm text-muted-foreground font-semibold -mt-2">
+            <DrawerHeader className="text-left">
+              <DrawerTitle className="text-2xl font-black">{title}</DrawerTitle>
+            </DrawerHeader>
+            <p className="text-sm text-muted-foreground font-semibold -mt-2 px-4">
               Выберите счёт — от него зависит валюта операции
             </p>
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            <div className="space-y-3 overflow-y-auto px-4 pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))]">
               {accounts.length === 0 ? (
                 <Card className="p-4 text-center space-y-3">
                   <div className="text-muted-foreground font-semibold">
@@ -217,7 +213,7 @@ export default function AddTransactionDialog({
         {/* Шаг 2 — сумма в валюте выбранного счёта */}
         {step === "amount" && selectedAccount && (
           <>
-            <DialogHeader>
+            <DrawerHeader className="text-left">
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
@@ -227,10 +223,10 @@ export default function AddTransactionDialog({
                 >
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
-                <DialogTitle className="text-2xl font-black">{title}</DialogTitle>
+                <DrawerTitle className="text-2xl font-black">{title}</DrawerTitle>
               </div>
-            </DialogHeader>
-            <div className="space-y-6">
+            </DrawerHeader>
+            <div className="space-y-6 overflow-y-auto px-4 pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))]">
               <div className="text-center py-6">
                 <div className="text-5xl font-black mb-2">
                   {amount || "0"}{" "}
@@ -259,30 +255,11 @@ export default function AddTransactionDialog({
               {/* Дата операции: по умолчанию сегодня, можно внести задним числом. */}
               <div className="space-y-2">
                 <Label className="font-bold">Дата операции</Label>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant={date === todayInput() ? "default" : "outline"}
-                    className="flex-1 font-bold"
-                    onClick={() => setDate(todayInput())}
-                  >
-                    Сегодня
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={date === yesterdayInput() ? "default" : "outline"}
-                    className="flex-1 font-bold"
-                    onClick={() => setDate(yesterdayInput())}
-                  >
-                    Вчера
-                  </Button>
-                </div>
-                <Input
-                  type="date"
+                <DatePickerDrawer
                   value={date}
-                  max={todayInput()}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="font-semibold"
+                  onChange={setDate}
+                  title="Дата операции"
+                  disableFuture
                 />
               </div>
 
@@ -300,7 +277,7 @@ export default function AddTransactionDialog({
 
         {step === "category" && !creatingCategory && (
           <>
-            <DialogHeader>
+            <DrawerHeader className="text-left">
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
@@ -310,10 +287,10 @@ export default function AddTransactionDialog({
                 >
                   <ArrowLeft className="h-5 w-5" />
                 </Button>
-                <DialogTitle className="text-2xl font-black">Выберите категорию</DialogTitle>
+                <DrawerTitle className="text-2xl font-black">Выберите категорию</DrawerTitle>
               </div>
-            </DialogHeader>
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            </DrawerHeader>
+            <div className="space-y-3 overflow-y-auto px-4 pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))]">
               <Card
                 className="p-4 cursor-pointer border-dashed hover:bg-accent/10 transition-colors"
                 onClick={() => setCreatingCategory(true)}
@@ -349,10 +326,10 @@ export default function AddTransactionDialog({
 
         {step === "category" && creatingCategory && (
           <>
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-black">Новая категория</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
+            <DrawerHeader className="text-left">
+              <DrawerTitle className="text-2xl font-black">Новая категория</DrawerTitle>
+            </DrawerHeader>
+            <div className="space-y-4 py-2 overflow-y-auto px-4 pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))]">
               <div className="space-y-2">
                 <Label htmlFor="cat-name" className="font-bold">Название</Label>
                 <Input
@@ -423,7 +400,7 @@ export default function AddTransactionDialog({
             </div>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+      </DrawerContent>
+    </Drawer>
   );
 }

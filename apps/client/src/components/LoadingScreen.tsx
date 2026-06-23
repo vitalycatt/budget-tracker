@@ -61,8 +61,8 @@ export default function LoadingScreen({ message }: LoadingScreenProps) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-8 text-center">
-      {/* Контент чуть выше центра. */}
-      <div className="-translate-y-[8%] flex flex-col items-center">
+      {/* Контент заметно выше центра. */}
+      <div className="-translate-y-[22%] flex flex-col items-center">
         {/* Брендовый пульс: вращающееся кольцо + пульсирующий кошелёк. */}
         <div className="relative w-24 h-24 mb-8">
           <div className="absolute inset-0 rounded-full border-4 border-accent/20 border-t-accent animate-spin" />
@@ -71,18 +71,21 @@ export default function LoadingScreen({ message }: LoadingScreenProps) {
           </div>
         </div>
 
-        {/* Сменяющаяся цитата (key перезапускает fade-in при смене). */}
-        <div key={index} className="animate-fade-in max-w-xs">
-          <p className="text-base font-bold leading-snug text-foreground">
-            «{quote.text}»
-          </p>
-          <p className="mt-2 text-sm font-semibold text-muted-foreground">
-            — {quote.author}
-          </p>
+        {/* Цитата в блоке фиксированной высоты, чтобы лоадер не «прыгал»
+            при смене текста (2 vs 3 строки). */}
+        <div className="h-28 max-w-xs flex flex-col items-center justify-start">
+          <div key={index} className="animate-fade-in">
+            <p className="text-base font-bold leading-snug text-foreground">
+              «{quote.text}»
+            </p>
+            <p className="mt-2 text-sm font-semibold text-muted-foreground">
+              — {quote.author}
+            </p>
+          </div>
         </div>
 
         {message && (
-          <p className="mt-6 text-sm font-semibold text-muted-foreground">{message}</p>
+          <p className="text-sm font-semibold text-muted-foreground">{message}</p>
         )}
       </div>
     </div>
