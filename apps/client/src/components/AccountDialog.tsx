@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerFooter,
+} from '@/components/ui/drawer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -99,15 +105,15 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-black">
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="max-h-[92vh]">
+        <DrawerHeader className="text-left">
+          <DrawerTitle className="text-2xl font-black">
             {account ? 'Редактировать счет' : 'Создать счет'}
-          </DialogTitle>
-        </DialogHeader>
+          </DrawerTitle>
+        </DrawerHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 space-y-4 pb-2">
           <div className="space-y-2">
             <Label htmlFor="name" className="font-bold">Название</Label>
             <Input
@@ -191,7 +197,7 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
           </div>
         </div>
 
-        <DialogFooter className="flex-col gap-2 sm:flex-col">
+        <DrawerFooter className="pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))]">
           <Button
             onClick={handleSubmit}
             disabled={createAccount.isPending || updateAccount.isPending}
@@ -219,8 +225,8 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
               Удалить счет
             </Button>
           )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   );
 }

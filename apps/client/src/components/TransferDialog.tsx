@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowDown } from 'lucide-react';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer';
 import {
   Select,
   SelectContent,
@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import DatePickerDrawer from '@/components/DatePickerDrawer';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useExchangeRates } from '@/hooks/use-exchange-rates';
 import { useCreateTransfer } from '@/hooks/use-transfers';
@@ -139,18 +140,18 @@ export default function TransferDialog({ open, onOpenChange }: TransferDialogPro
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-black">Перевод</DialogTitle>
-        </DialogHeader>
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="max-h-[92vh]">
+        <DrawerHeader className="text-left">
+          <DrawerTitle className="text-2xl font-black">Перевод</DrawerTitle>
+        </DrawerHeader>
 
         {accounts.length < 2 ? (
-          <p className="text-muted-foreground font-semibold py-4 text-center">
+          <p className="text-muted-foreground font-semibold px-4 pb-6 text-center">
             Нужно минимум два счёта, чтобы делать переводы.
           </p>
         ) : (
-          <div className="space-y-4">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))] space-y-4">
             {/* Откуда */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-muted-foreground">Откуда</Label>
@@ -260,11 +261,12 @@ export default function TransferDialog({ open, onOpenChange }: TransferDialogPro
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs font-bold text-muted-foreground">Дата</Label>
-                <Input
-                  type="date"
+                <DatePickerDrawer
                   value={date}
-                  onChange={(e) => setDate(e.target.value)}
+                  onChange={setDate}
+                  title="Дата перевода"
                   className="h-12"
+                  disableFuture
                 />
               </div>
               <div className="space-y-1.5">
@@ -288,7 +290,7 @@ export default function TransferDialog({ open, onOpenChange }: TransferDialogPro
             </Button>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </DrawerContent>
+    </Drawer>
   );
 }

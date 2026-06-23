@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerFooter,
+} from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import DatePickerDrawer from "@/components/DatePickerDrawer";
 import type { Transaction, TransactionType } from "@/stores/financeStore";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCategories } from "@/hooks/use-categories";
@@ -114,13 +115,13 @@ export default function EditTransactionDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-black">Редактировать операцию</DialogTitle>
-        </DialogHeader>
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="max-h-[92vh]">
+        <DrawerHeader className="text-left">
+          <DrawerTitle className="text-2xl font-black">Редактировать операцию</DrawerTitle>
+        </DrawerHeader>
 
-        <div className="space-y-4 py-2">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 space-y-4 pb-2">
           <div className="grid grid-cols-2 gap-2">
             {(["expense", "income"] as TransactionType[]).map((option) => (
               <button
@@ -191,18 +192,12 @@ export default function EditTransactionDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="edit-date" className="font-bold">Дата</Label>
-            <Input
-              id="edit-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="font-semibold"
-            />
+            <Label className="font-bold">Дата</Label>
+            <DatePickerDrawer value={date} onChange={setDate} title="Дата операции" disableFuture />
           </div>
         </div>
 
-        <DialogFooter className="flex-col gap-2 sm:flex-col">
+        <DrawerFooter className="pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))]">
           <Button
             onClick={handleSave}
             disabled={!canSave || updateTransaction.isPending}
@@ -218,8 +213,8 @@ export default function EditTransactionDialog({
           >
             Удалить операцию
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   );
 }
