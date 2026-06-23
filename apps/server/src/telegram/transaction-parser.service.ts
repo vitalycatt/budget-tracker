@@ -12,6 +12,18 @@ export const parsedTransactionSchema = z.object({
   categoryName: z
     .string()
     .describe('Краткое название категории на русском, регистр как в исходном тексте (например: кофе, транспорт, зарплата)'),
+  accountName: z
+    .string()
+    .optional()
+    .describe(
+      'Название счёта из списка пользователя, если он упомянут в тексте. Пользователь может написать приблизительно или с опечаткой («альфа карта» → «Альфа карточка») — верни точное название из списка. Если счёт не упомянут — опусти.',
+    ),
+  accountCurrency: z
+    .string()
+    .optional()
+    .describe(
+      'Код валюты ISO-4217 выбранного счёта. Указывай обязательно, если в списке несколько счетов с таким же названием, чтобы различить их по валюте (например «наличные доллары» → USD). Иначе можно опустить.',
+    ),
   description: z.string().describe('Короткое описание операции на русском'),
   date: z
     .string()
@@ -20,6 +32,12 @@ export const parsedTransactionSchema = z.object({
 });
 
 export type ParsedTransaction = z.infer<typeof parsedTransactionSchema>;
+
+/** Счёт пользователя в виде, нужном парсеру для подсказки модели. */
+export interface AccountHint {
+  name: string;
+  currency: string;
+}
 
 /** Провайдер LLM для парсинга. Anthropic — основной; groq — бесплатная альтернатива. */
 type Provider = 'anthropic' | 'groq';
@@ -36,6 +54,8 @@ const OUTPUT_JSON_SCHEMA = {
     type: { type: 'string', enum: ['income', 'expense'] },
     amount: { type: 'number' },
     categoryName: { type: 'string' },
+    accountName: { type: 'string' },
+    accountCurrency: { type: 'string' },
     description: { type: 'string' },
     date: { type: 'string' },
   },
@@ -80,16 +100,22 @@ export class TransactionParserService {
   }
 
   /**
-   * Извлекает из свободной фразы сумму, тип, категорию, описание и дату.
+   * Извлекает из свободной фразы сумму, тип, категорию, описание, дату и счёт.
    * `existingCategories` — имена категорий пользователя, чтобы модель переиспользовала их.
+   * `existingAccounts` — счета пользователя (имя + валюта), чтобы модель сопоставила
+   * приблизительно написанное название и различила одноимённые счета по валюте.
    * Возвращает null, если сообщение не похоже на транзакцию или парсинг не удался.
    */
-  async parse(text: string, existingCategories: string[]): Promise<ParsedTransaction | null> {
+  async parse(
+    text: string,
+    existingCategories: string[],
+    existingAccounts: AccountHint[] = [],
+  ): Promise<ParsedTransaction | null> {
     if (!this.isEnabled) {
       throw new Error('Парсер недоступен: не задан ключ LLM-провайдера');
     }
 
-    const system = this.buildSystemPrompt(existingCategories);
+    const system = this.buildSystemPrompt(existingCategories, existingAccounts);
     const raw =
       this.provider === 'groq'
         ? await this.callGroq(system, text)
@@ -118,10 +144,24 @@ export class TransactionParserService {
   }
 
   /** Общий системный промпт. Для Groq дополняем явным требованием вернуть JSON. */
-  private buildSystemPrompt(existingCategories: string[]): string {
+  private buildSystemPrompt(
+    existingCategories: string[],
+    existingAccounts: AccountHint[],
+  ): string {
     const categoriesHint = existingCategories.length
       ? `Существующие категории пользователя (переиспользуй подходящую, не выдумывай новую без необходимости): ${existingCategories.join(', ')}.`
       : 'У пользователя пока нет категорий — предложи подходящее короткое название.';
+
+    const accountsHint = existingAccounts.length
+      ? `Счета пользователя (название и валюта): ${existingAccounts
+          .map((a) => `${a.name} (${a.currency})`)
+          .join(', ')}. ` +
+        'Если в тексте упомянут счёт — верни его точное название из списка в accountName, ' +
+        'даже если пользователь написал приблизительно или с опечаткой («альфа карта» → «Альфа карточка»). ' +
+        'Если в списке несколько счетов с одинаковым названием — различи их по валюте и верни код валюты выбранного счёта в accountCurrency ' +
+        '(«наличные доллары» → accountName «Наличные», accountCurrency «USD»). ' +
+        'Если счёт в тексте не упомянут — опусти accountName и accountCurrency.'
+      : '';
 
     const today = new Date().toISOString().slice(0, 10);
     const lines = [
@@ -133,12 +173,14 @@ export class TransactionParserService {
       'Если фраза не описывает финансовую операцию — верни isTransaction=false и нули/пустые строки.',
       categoriesHint,
     ];
+    if (accountsHint) lines.push(accountsHint);
 
     if (this.provider === 'groq') {
       lines.push(
         'Верни СТРОГО один JSON-объект с полями: isTransaction (boolean), type ("income"|"expense"), ' +
-          'amount (number), categoryName (string), description (string), date (string "YYYY-MM-DD", опционально). ' +
-          'Без markdown, без пояснений — только JSON.',
+          'amount (number), categoryName (string), accountName (string, опционально), ' +
+          'accountCurrency (string ISO-4217, опционально), description (string), ' +
+          'date (string "YYYY-MM-DD", опционально). Без markdown, без пояснений — только JSON.',
       );
     }
     return lines.join(' ');
