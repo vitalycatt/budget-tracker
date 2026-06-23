@@ -24,6 +24,7 @@ import {
   dateKeyboard,
   formatDateLabel,
 } from './draft-card';
+import { appDayIso, dayStrToIso } from '../common/app-date';
 
 /** Какое поле черновика бот ждёт текстом от пользователя. */
 type EditField = 'amount' | 'desc' | 'newcat' | 'datecustom';
@@ -592,24 +593,23 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     return matches.length === 1 ? matches[0].id : undefined;
   }
 
-  /** Дата из парсера: валидный YYYY-MM-DD → полдень того дня; иначе сейчас. */
+  /** Дата из парсера: валидный YYYY-MM-DD → полдень того дня; иначе сегодня (в таймзоне приложения). */
   private resolveParsedDate(dateStr?: string): string {
     if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      const d = new Date(`${dateStr}T12:00:00`);
+      const d = new Date(dayStrToIso(dateStr));
       if (!Number.isNaN(d.getTime())) return d.toISOString();
     }
-    return new Date().toISOString();
+    return appDayIso(0);
   }
 
-  /** today/yesterday/dbefore → ISO (сохраняем текущее время суток). */
+  /** today/yesterday/dbefore → ISO (полдень UTC дня в таймзоне приложения). */
   private relativeDate(kind: string): string {
-    const d = new Date();
-    if (kind === 'yesterday') d.setDate(d.getDate() - 1);
-    else if (kind === 'dbefore') d.setDate(d.getDate() - 2);
-    return d.toISOString();
+    if (kind === 'yesterday') return appDayIso(-1);
+    if (kind === 'dbefore') return appDayIso(-2);
+    return appDayIso(0);
   }
 
-  /** Ручной ввод даты: дд.мм.гггг или дд.мм → ISO (полдень); null при ошибке. */
+  /** Ручной ввод даты: дд.мм.гггг или дд.мм → ISO (полдень UTC); null при ошибке. */
   private parseManualDate(text: string): string | null {
     const m = text.trim().match(/^(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?$/);
     if (!m) return null;
@@ -617,11 +617,12 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     const mon = Number(m[2]) - 1;
     let year = m[3] ? Number(m[3]) : new Date().getFullYear();
     if (year < 100) year += 2000;
-    const d = new Date(year, mon, day, 12, 0, 0);
+    // Валидация через UTC, чтобы отловить переполнение (31.02 → март).
+    const d = new Date(Date.UTC(year, mon, day, 12, 0, 0));
     if (
       Number.isNaN(d.getTime()) ||
-      d.getMonth() !== mon ||
-      d.getDate() !== day
+      d.getUTCMonth() !== mon ||
+      d.getUTCDate() !== day
     )
       return null;
     return d.toISOString();
