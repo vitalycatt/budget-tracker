@@ -18,8 +18,8 @@ import {
 } from "@/components/ui/drawer";
 import DatePickerDrawer from "@/components/DatePickerDrawer";
 
-/** Шаги ввода: сначала счёт (он задаёт валюту), потом сумма, потом категория. */
-type Step = "account" | "amount" | "category";
+/** Шаги ввода: сначала категория, потом счёт (он задаёт валюту), потом сумма. */
+type Step = "category" | "account" | "amount";
 
 const accountEmoji = (type: Account["type"]) =>
   type === "bank" ? "🏦" : type === "card" ? "💳" : "💵";
@@ -47,9 +47,10 @@ export default function AddTransactionDialog({
   type,
 }: AddTransactionDialogProps) {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>("account");
+  const [step, setStep] = useState<Step>("category");
   const [amount, setAmount] = useState("");
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   // Создание категории на лету
   const [creatingCategory, setCreatingCategory] = useState(false);
   const [newName, setNewName] = useState("");
@@ -73,9 +74,10 @@ export default function AddTransactionDialog({
   }, [open]);
 
   const resetDialog = () => {
-    setStep("account");
+    setStep("category");
     setAmount("");
     setSelectedAccount(null);
+    setSelectedCategory(null);
     setCreatingCategory(false);
     setNewName("");
     setNewIcon(NEW_CATEGORY_ICONS[0]);
@@ -91,15 +93,14 @@ export default function AddTransactionDialog({
 
   const handleDelete = () => setAmount(amount.slice(0, -1));
 
+  const handleCategorySelect = (category: Category) => {
+    setSelectedCategory(category);
+    setStep("account");
+  };
+
   const handleAccountSelect = (account: Account) => {
     setSelectedAccount(account);
     setStep("amount");
-  };
-
-  const handleOk = () => {
-    if (amount && parseFloat(amount) > 0) {
-      setStep("category");
-    }
   };
 
   // Символ валюты выбранного счёта — показываем рядом с суммой при вводе.
@@ -107,17 +108,18 @@ export default function AddTransactionDialog({
     ? CURRENCY_META[selectedAccount.currency]?.symbol ?? selectedAccount.currency
     : "";
 
-  const submitTransaction = (category: Category) => {
-    if (!selectedAccount || !amount) {
+  // Финальный шаг (сумма): категория и счёт уже выбраны — сохраняем операцию.
+  const submitTransaction = () => {
+    if (!selectedAccount || !selectedCategory || !amount || parseFloat(amount) <= 0) {
       return;
     }
     createTransaction.mutate(
       {
         type,
         amount: parseFloat(amount),
-        categoryId: category.id,
+        categoryId: selectedCategory.id,
         accountId: selectedAccount.id,
-        description: category.name,
+        description: selectedCategory.name,
         // Полдень локального времени — чтобы выбранная дата не «сползла» на сутки при конвертации в UTC.
         date: new Date(`${date}T12:00:00`),
       },
@@ -140,7 +142,9 @@ export default function AddTransactionDialog({
       color: newColor,
       type,
     });
-    submitTransaction(created);
+    setSelectedCategory(created);
+    setCreatingCategory(false);
+    setStep("account");
   };
 
   const handleClose = () => {
@@ -153,11 +157,21 @@ export default function AddTransactionDialog({
   return (
     <Drawer open={open} onOpenChange={handleClose}>
       <DrawerContent className="max-h-[92vh]">
-        {/* Шаг 1 — счёт (задаёт валюту операции) */}
+        {/* Шаг 2 — счёт (задаёт валюту операции) */}
         {step === "account" && (
           <>
             <DrawerHeader className="text-left">
-              <DrawerTitle className="text-2xl font-black">{title}</DrawerTitle>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={() => setStep("category")}
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </Button>
+                <DrawerTitle className="text-2xl font-black">{title}</DrawerTitle>
+              </div>
             </DrawerHeader>
             <p className="text-sm text-muted-foreground font-semibold -mt-2 px-4">
               Выберите счёт — от него зависит валюта операции
@@ -210,7 +224,7 @@ export default function AddTransactionDialog({
           </>
         )}
 
-        {/* Шаг 2 — сумма в валюте выбранного счёта */}
+        {/* Шаг 3 — сумма в валюте выбранного счёта (финальный шаг — сохраняет) */}
         {step === "amount" && selectedAccount && (
           <>
             <DrawerHeader className="text-left">
@@ -266,30 +280,28 @@ export default function AddTransactionDialog({
               <Button
                 size="lg"
                 className="w-full h-14 text-lg font-bold bg-accent hover:bg-accent/90 text-foreground"
-                onClick={handleOk}
-                disabled={!amount || parseFloat(amount) <= 0}
+                onClick={submitTransaction}
+                disabled={
+                  !amount ||
+                  parseFloat(amount) <= 0 ||
+                  createTransaction.isPending
+                }
               >
-                ОК
+                Сохранить
               </Button>
             </div>
           </>
         )}
 
+        {/* Шаг 1 — категория (первый шаг ввода) */}
         {step === "category" && !creatingCategory && (
           <>
             <DrawerHeader className="text-left">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0"
-                  onClick={() => setStep("amount")}
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
-                <DrawerTitle className="text-2xl font-black">Выберите категорию</DrawerTitle>
-              </div>
+              <DrawerTitle className="text-2xl font-black">{title}</DrawerTitle>
             </DrawerHeader>
+            <p className="text-sm text-muted-foreground font-semibold -mt-2 px-4">
+              Выберите категорию
+            </p>
             <div className="space-y-3 overflow-y-auto px-4 pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))]">
               <Card
                 className="p-4 cursor-pointer border-dashed hover:bg-accent/10 transition-colors"
@@ -307,7 +319,7 @@ export default function AddTransactionDialog({
                 <Card
                   key={category.id}
                   className="p-4 cursor-pointer hover:bg-accent/10 transition-colors"
-                  onClick={() => submitTransaction(category)}
+                  onClick={() => handleCategorySelect(category)}
                 >
                   <div className="flex items-center gap-3">
                     <div
@@ -392,9 +404,9 @@ export default function AddTransactionDialog({
                 <Button
                   className="flex-1 font-bold bg-accent hover:bg-accent/90 text-foreground"
                   onClick={handleCreateCategory}
-                  disabled={!newName.trim() || createCategory.isPending || createTransaction.isPending}
+                  disabled={!newName.trim() || createCategory.isPending}
                 >
-                  Создать и добавить
+                  Создать и продолжить
                 </Button>
               </div>
             </div>
