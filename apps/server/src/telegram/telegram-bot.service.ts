@@ -29,10 +29,15 @@ import { appDayIso, dayStrToIso } from '../common/app-date';
 /** Какое поле черновика бот ждёт текстом от пользователя. */
 type EditField = 'amount' | 'desc' | 'newcat' | 'datecustom';
 
+/**
+ * Состояние диалога в боте. Черновиков может быть несколько одновременно
+ * («быстрый захват»: настрелял подряд несколько трат — подтверждаешь каждую),
+ * поэтому храним их картой по `message_id` карточки. Текстовая правка поля
+ * (`editing`) привязана к конкретной карточке, иначе ввод применился бы не туда.
+ */
 interface SessionData {
-  draft?: Draft;
-  view: DraftView;
-  editing?: EditField | null;
+  drafts: Record<number, Draft>;
+  editing?: { field: EditField; cardMessageId: number } | null;
 }
 
 type MyContext = Context & SessionFlavor<SessionData>;
@@ -71,8 +76,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     this.bot.use(
       session({
         initial: (): SessionData => ({
-          draft: undefined,
-          view: 'summary',
+          drafts: {},
           editing: null,
         }),
       }),
@@ -133,10 +137,18 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     if (!from || !text) return;
 
     try {
-      // Если ждём правку конкретного поля — трактуем сообщение как значение, не парсим заново.
-      if (ctx.session.editing && ctx.session.draft) {
-        await this.applyFieldEdit(ctx, ctx.session.editing, text);
-        return;
+      this.pruneStaleDrafts(ctx);
+
+      // Если ждём правку конкретного поля — трактуем сообщение как значение этого
+      // поля у соответствующей карточки, не парсим заново.
+      if (ctx.session.editing) {
+        const target = ctx.session.drafts[ctx.session.editing.cardMessageId];
+        if (target) {
+          await this.applyFieldEdit(ctx, target, ctx.session.editing.field, text);
+          return;
+        }
+        // Карточка уже сохранена/протухла — сбрасываем ожидание и парсим как новую фразу.
+        ctx.session.editing = null;
       }
 
       const user = await this.usersService.findOrCreateByTelegram({
@@ -192,32 +204,32 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
           (accounts.length === 1 ? accounts[0].id : undefined),
         description: parsed.description || parsed.categoryName,
         date: this.resolveParsedDate(parsed.date),
+        view: 'summary',
         updatedAt: Date.now(),
       };
-
-      ctx.session.draft = draft;
-      ctx.session.view = 'summary';
-      ctx.session.editing = null;
 
       const account = accounts.find((a) => a.id === draft.accountId);
       const sent = await ctx.reply(renderDraftText(draft, account, 'summary'), {
         parse_mode: 'HTML',
         reply_markup: renderDraftKeyboard(draft, accounts, 'summary'),
       });
+      // Привязываем черновик к id его карточки — так callback'и разных карточек
+      // не путаются между собой (раньше слот был один на чат → жил только последний).
       draft.cardMessageId = sent.message_id;
+      ctx.session.drafts[sent.message_id] = draft;
     } catch (error) {
       this.logger.error(`handleText: ${(error as Error).message}`);
       await ctx.reply('Произошла ошибка. Попробуйте ещё раз.');
     }
   }
 
-  /** Применяет введённое текстом значение к полю черновика и обновляет карточку. */
+  /** Применяет введённое текстом значение к полю заданного черновика и обновляет его карточку. */
   private async applyFieldEdit(
     ctx: MyContext,
+    draft: Draft,
     field: EditField,
     text: string,
   ): Promise<void> {
-    const draft = ctx.session.draft!;
     switch (field) {
       case 'amount': {
         const value = Number(text.replace(',', '.').replace(/[^\d.]/g, ''));
@@ -248,7 +260,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       }
     }
     ctx.session.editing = null;
-    await this.renderCard(ctx, draft, ctx.session.view);
+    await this.renderCard(ctx, draft, draft.view);
   }
 
   // ─────────────────────────── Callback-кнопки ───────────────────────────
@@ -266,10 +278,13 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      const draft = ctx.session.draft;
+      // Нажатие относится к конкретной карточке — берём её черновик по message_id.
+      const messageId = ctx.callbackQuery?.message?.message_id;
+      const draft = messageId ? ctx.session.drafts[messageId] : undefined;
       if (!draft || Date.now() - draft.updatedAt > DRAFT_TTL_MS) {
-        ctx.session.draft = undefined;
-        ctx.session.editing = null;
+        if (messageId) delete ctx.session.drafts[messageId];
+        if (ctx.session.editing?.cardMessageId === messageId)
+          ctx.session.editing = null;
         await ctx.answerCallbackQuery({
           text: 'Черновик устарел, повторите ввод.',
         });
@@ -292,8 +307,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
   ): Promise<void> {
     // Завершающие действия.
     if (data === 'd:cancel') {
-      ctx.session.draft = undefined;
-      ctx.session.editing = null;
+      this.discardDraft(ctx, draft);
       await ctx.editMessageText('❌ Черновик отменён.');
       return void ctx.answerCallbackQuery();
     }
@@ -303,12 +317,12 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
 
     // Переключение режима сводка ⇄ редактор.
     if (data === 'd:edit') {
-      ctx.session.view = 'edit';
+      draft.view = 'edit';
       await this.renderCard(ctx, draft, 'edit', true);
       return void ctx.answerCallbackQuery();
     }
     if (data === 'd:done') {
-      ctx.session.view = 'summary';
+      draft.view = 'summary';
       await this.renderCard(ctx, draft, 'summary', true);
       return void ctx.answerCallbackQuery();
     }
@@ -335,30 +349,36 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
     if (data === 'd:back') {
       const accounts = await this.activeAccounts(draft.userId);
       await ctx.editMessageReplyMarkup({
-        reply_markup: renderDraftKeyboard(draft, accounts, ctx.session.view),
+        reply_markup: renderDraftKeyboard(draft, accounts, draft.view),
       });
       return void ctx.answerCallbackQuery();
     }
 
-    // Поля, требующие текстового ввода.
+    // Поля, требующие текстового ввода (ожидание привязано к этой карточке).
     if (data === 'd:f:amount') {
-      ctx.session.editing = 'amount';
-      await ctx.reply('Введите сумму числом:');
+      await this.awaitFieldInput(ctx, draft, 'amount', 'Введите сумму числом:');
       return void ctx.answerCallbackQuery();
     }
     if (data === 'd:f:desc') {
-      ctx.session.editing = 'desc';
-      await ctx.reply('Введите описание:');
+      await this.awaitFieldInput(ctx, draft, 'desc', 'Введите описание:');
       return void ctx.answerCallbackQuery();
     }
     if (data === 'd:newcat') {
-      ctx.session.editing = 'newcat';
-      await ctx.reply('Введите название категории:');
+      await this.awaitFieldInput(
+        ctx,
+        draft,
+        'newcat',
+        'Введите название категории:',
+      );
       return void ctx.answerCallbackQuery();
     }
     if (data === 'd:setdate:custom') {
-      ctx.session.editing = 'datecustom';
-      await ctx.reply('Введите дату в формате дд.мм.гггг:');
+      await this.awaitFieldInput(
+        ctx,
+        draft,
+        'datecustom',
+        'Введите дату в формате дд.мм.гггг:',
+      );
       return void ctx.answerCallbackQuery();
     }
 
@@ -382,8 +402,35 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
       return void ctx.answerCallbackQuery();
     }
 
-    await this.renderCard(ctx, draft, ctx.session.view, true);
+    await this.renderCard(ctx, draft, draft.view, true);
     await ctx.answerCallbackQuery();
+  }
+
+  /** Помечает, что от пользователя ждём текстом значение поля для конкретной карточки. */
+  private async awaitFieldInput(
+    ctx: MyContext,
+    draft: Draft,
+    field: EditField,
+    prompt: string,
+  ): Promise<void> {
+    ctx.session.editing = { field, cardMessageId: draft.cardMessageId! };
+    await ctx.reply(prompt);
+  }
+
+  /** Убирает черновик из сессии и сбрасывает связанное с ним ожидание ввода. */
+  private discardDraft(ctx: MyContext, draft: Draft): void {
+    if (draft.cardMessageId !== undefined)
+      delete ctx.session.drafts[draft.cardMessageId];
+    if (ctx.session.editing?.cardMessageId === draft.cardMessageId)
+      ctx.session.editing = null;
+  }
+
+  /** Удаляет протухшие по TTL черновики (ленивая очистка при активности пользователя). */
+  private pruneStaleDrafts(ctx: MyContext): void {
+    const now = Date.now();
+    for (const [id, draft] of Object.entries(ctx.session.drafts)) {
+      if (now - draft.updatedAt > DRAFT_TTL_MS) delete ctx.session.drafts[Number(id)];
+    }
   }
 
   /** Сохраняет черновик как транзакцию, заменяет карточку подтверждением с кнопкой отмены. */
@@ -422,9 +469,7 @@ export class TelegramBotService implements OnModuleInit, OnModuleDestroy {
         },
       );
 
-      ctx.session.draft = undefined;
-      ctx.session.editing = null;
-      ctx.session.view = 'summary';
+      this.discardDraft(ctx, draft);
 
       const sign = tx.type === 'expense' ? '−' : '+';
       const money = formatMoney(Number(tx.amount), tx.currency as Currency);

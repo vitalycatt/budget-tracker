@@ -200,7 +200,7 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
         <DrawerFooter className="pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))]">
           <Button
             onClick={handleSubmit}
-            disabled={createAccount.isPending || updateAccount.isPending}
+            loading={createAccount.isPending || updateAccount.isPending}
             className="w-full font-bold bg-accent hover:bg-accent/90 text-foreground"
           >
             {account ? 'Сохранить' : 'Создать'}
@@ -209,7 +209,7 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
             <Button
               variant="outline"
               onClick={handleToggleArchive}
-              disabled={updateAccount.isPending}
+              loading={updateAccount.isPending}
               className="w-full font-bold"
             >
               {account.isArchived ? 'Вернуть из архива' : 'Архивировать счёт'}
@@ -219,7 +219,7 @@ export default function AccountDialog({ open, onOpenChange, account }: AccountDi
             <Button
               variant="destructive"
               onClick={handleDelete}
-              disabled={deleteAccount.isPending}
+              loading={deleteAccount.isPending}
               className="w-full font-bold"
             >
               Удалить счет
