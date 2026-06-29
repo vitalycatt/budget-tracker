@@ -46,7 +46,7 @@ export default function Onboarding() {
       <Button
         size="lg"
         className="w-full h-14 mt-6 text-lg font-bold bg-accent hover:bg-accent/90 text-foreground"
-        disabled={onboarding.isPending}
+        loading={onboarding.isPending}
         onClick={() => onboarding.mutate(selected)}
       >
         Продолжить

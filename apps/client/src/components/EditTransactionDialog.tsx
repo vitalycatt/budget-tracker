@@ -200,7 +200,8 @@ export default function EditTransactionDialog({
         <DrawerFooter className="pb-[max(1rem,var(--tg-safe-bottom,env(safe-area-inset-bottom,0px)))]">
           <Button
             onClick={handleSave}
-            disabled={!canSave || updateTransaction.isPending}
+            disabled={!canSave}
+            loading={updateTransaction.isPending}
             className="w-full font-bold bg-accent hover:bg-accent/90 text-foreground"
           >
             Сохранить
@@ -208,7 +209,7 @@ export default function EditTransactionDialog({
           <Button
             variant="destructive"
             onClick={handleDelete}
-            disabled={deleteTransaction.isPending}
+            loading={deleteTransaction.isPending}
             className="w-full font-bold"
           >
             Удалить операцию

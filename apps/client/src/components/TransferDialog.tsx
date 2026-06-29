@@ -285,6 +285,7 @@ export default function TransferDialog({ open, onOpenChange }: TransferDialogPro
               className="w-full h-14 text-lg font-bold bg-accent hover:bg-accent/90 text-foreground"
               onClick={handleSubmit}
               disabled={!canSubmit}
+              loading={createTransfer.isPending}
             >
               Перевести
             </Button>

@@ -281,11 +281,8 @@ export default function AddTransactionDialog({
                 size="lg"
                 className="w-full h-14 text-lg font-bold bg-accent hover:bg-accent/90 text-foreground"
                 onClick={submitTransaction}
-                disabled={
-                  !amount ||
-                  parseFloat(amount) <= 0 ||
-                  createTransaction.isPending
-                }
+                disabled={!amount || parseFloat(amount) <= 0}
+                loading={createTransaction.isPending}
               >
                 Сохранить
               </Button>
@@ -404,7 +401,8 @@ export default function AddTransactionDialog({
                 <Button
                   className="flex-1 font-bold bg-accent hover:bg-accent/90 text-foreground"
                   onClick={handleCreateCategory}
-                  disabled={!newName.trim() || createCategory.isPending}
+                  disabled={!newName.trim()}
+                  loading={createCategory.isPending}
                 >
                   Создать и продолжить
                 </Button>
